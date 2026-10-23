@@ -1,5 +1,8 @@
 # PCB Timelapse
 
+> [!WARNING]
+> **AI-written code.** PCB Timelapse was written almost entirely by Claude, working from my design direction, feedback and bug reports. I've used and tested it on Windows with KiCad 10, but other setups are less tested, so expect rough edges. Treat it like any third-party code: keep backups of your projects and report problems in Issues.
+
 Record your KiCad PCB layout work and turn it into a timelapse video. It records two streams:
 
 - **View:** what you see in the editor, including where you're zoomed in and which layer you're working on.

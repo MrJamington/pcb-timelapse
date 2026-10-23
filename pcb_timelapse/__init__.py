@@ -1,4 +1,8 @@
-"""PCB Timelapse - record KiCad PCB layout as a zoomed-view and whole-board timelapse."""
+"""PCB Timelapse - record KiCad PCB layout as a zoomed-view and whole-board timelapse.
+
+Written largely by Claude under the author's direction and testing.
+See README.md for details.
+"""
 
 from .recorder import (PAUSE_NAME, TOOL_NAME, TimelapseAction, TimelapsePauseAction,
                        start_autostarter, toggle_pause)
