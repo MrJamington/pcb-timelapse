@@ -12,7 +12,9 @@ You can render them separately, side by side, or stacked.
 
 Recording only runs while the PCB Editor is the window you're using. Alt-tab, sleep or the lock screen pause it, and that time doesn't count.
 
-<!-- Screenshots / example GIF go here -->
+   ![PCB Timelapse: the zoomed editor view on the left, the whole board building up on the right](docs/demo.gif)
+
+   *Left: the editor view while routing. Right: the board video, which follows the copper layer being worked on (2× speed).*
 
 ## Requirements
 
