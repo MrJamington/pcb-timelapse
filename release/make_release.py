@@ -70,17 +70,31 @@ def main():
             v.pop(k, None)
 
     manual = os.path.join(dist, f"pcb-timelapse-{ver}-manual.zip")
-    if not reuse:
-        with zipfile.ZipFile(pcm, "w") as z:
+
+    def build_pcm(target):
+        with zipfile.ZipFile(target, "w") as z:
             for full, rel in plugin_files(a.plugin_dir):
                 add(z, full, "plugins/" + rel)
             add(z, os.path.join(HERE, "resources", "icon.png"), "resources/icon.png")
             add(z, json.dumps(inner, indent=2).encode(), "metadata.json")
+
+    if reuse:
+        # Only reuse the existing zip if it still matches the current source;
+        # otherwise the uploaded zip is out of date and must be rebuilt + re-uploaded
+        check = pcm + ".check"
+        build_pcm(check)
+        same = open(check, "rb").read() == open(pcm, "rb").read()
+        os.remove(check)
+        if not same:
+            raise SystemExit(
+                "The source has changed since " + os.path.basename(pcm) + " was built.\n"
+                "Rebuild without --url, upload the new zips to the release, then run with --url again.")
+        print("reusing", os.path.basename(pcm), "(matches current source; checksum unchanged)")
+    else:
+        build_pcm(pcm)
         with zipfile.ZipFile(manual, "w") as z:
             for full, rel in plugin_files(a.plugin_dir):
                 add(z, full, "pcb_timelapse/" + rel)
-    else:
-        print("reusing", os.path.basename(pcm), "(not rebuilt, so its checksum is unchanged)")
     with zipfile.ZipFile(pcm) as z:
         install_size = sum(i.file_size for i in z.infolist())
 
