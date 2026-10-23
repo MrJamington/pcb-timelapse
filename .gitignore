@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+release/dist/
+recorder_settings.json
+render_settings.json
