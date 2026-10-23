@@ -16,6 +16,17 @@ Recording only runs while the PCB Editor is the window you're using. Alt-tab, sl
 
    *Left: the editor view while routing. Right: the board video, which follows the copper layer being worked on (2× speed).*
 
+<details>
+<summary>▶ Full-quality video (real speed)</summary>
+
+https://github.com/user-attachments/assets/558e34e8-116a-42f5-b8ec-85543dcca87b
+
+<sub>ps. don't judge my board</sub>
+
+</details>
+
+
+
 ## Requirements
 
 - KiCad 7, 8, 9 or 10. The recorder uses KiCad's Python action-plugin API, which KiCad 11 is expected to remove.
