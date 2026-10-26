@@ -30,7 +30,11 @@ Tested on Windows. Linux and macOS should work, but are less tested; lock-screen
 
 **KiCad Plugin and Content Manager:** search for *PCB Timelapse*, once it's listed.
 
-**Manually:** download `pcb-timelapse-<version>-manual.zip` from [Releases](https://github.com/MrJamington/pcb-timelapse/releases) and unzip it into your plugins folder (in the PCB Editor, **Tools → External Plugins → Open Plugin Directory**), then **Tools → External Plugins → Refresh Plugins**. You can also copy the `pcb_timelapse` folder straight from this repo instead of the zip. On Linux the plugins folder is usually `~/.local/share/kicad/<version>/scripting/plugins/`.
+**Manually:** download `pcb-timelapse-<version>-manual.zip` from [Releases](https://github.com/MrJamington/pcb-timelapse/releases) and unzip it into your plugins folder (in the PCB Editor, **Tools → External Plugins → Open Plugin Directory**), then **Tools → External Plugins → Refresh Plugins**. You can also copy the `pcb_timelapse` folder straight from this repo instead of the zip. The plugins folder is usually:
+
+- Windows: `%USERPROFILE%\Documents\KiCad\<version>\scripting\plugins\`
+- macOS: `~/Documents/KiCad/<version>/scripting/plugins/`
+- Linux: `~/.local/share/kicad/<version>/scripting/plugins/`
 
 Three buttons appear on the toolbar:
 
