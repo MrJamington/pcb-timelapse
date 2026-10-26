@@ -340,47 +340,16 @@ def _next_index(folder, prefix):
 
 
 FOLDER_NAME = "pcb_timelapse"     # next to the board
-OLD_FOLDER_NAMES = ("speedpaint",)  # renamed from; migrated automatically
 RENDERS = "renders"                 # <folder>/renders/<recording>/ - kept when recordings are deleted
 
 
 def sessions_dir(board_path):
-    root = os.path.join(os.path.dirname(board_path), FOLDER_NAME)
-    if not os.path.exists(root):
-        for old in OLD_FOLDER_NAMES:
-            old_root = os.path.join(os.path.dirname(board_path), old)
-            if os.path.isdir(old_root):
-                try:
-                    os.rename(old_root, root)
-                    migrate_renders(root)
-                except OSError as e:
-                    print("pcb_timelapse: couldn't migrate old folder:", e)
-                    return old_root
-                break
-    return root
+    return os.path.join(os.path.dirname(board_path), FOLDER_NAME)
 
 
 def renders_dir(root, name):
     """Where the videos for a recording (or a joined render) go."""
     return os.path.join(root, RENDERS, name)
-
-
-def migrate_renders(root):
-    """Older versions kept videos in <recording>/out/; move them to renders/."""
-    try:
-        names = os.listdir(root)
-    except OSError:
-        return
-    for name in names:
-        out = os.path.join(root, name, "out")
-        if name != RENDERS and os.path.isdir(out):
-            dst = renders_dir(root, name)
-            if not os.path.exists(dst):
-                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                try:
-                    os.rename(out, dst)
-                except OSError:
-                    pass
 
 
 def list_sessions(board_path):

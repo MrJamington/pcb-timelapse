@@ -235,8 +235,6 @@ Finished frames are cached too. The cache key includes all the look settings plu
         20261024-153000/        view.mp4, board.mp4, combined.mp4
 ```
 
-Old `speedpaint/` folders are renamed automatically, and their old `out/` videos are moved into `renders/` (`sessions_dir`, `migrate_renders`).
-
 ---
 
 ## 9. Design decisions worth knowing
