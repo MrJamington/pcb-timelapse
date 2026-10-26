@@ -102,7 +102,7 @@ Click the render button, or **Render…** in the PCB Timelapse window.
 - Tick, untick and reorder board layers. The top of the list is drawn on top.
 - Choose the look: holes, vias, board fill, outline, glow, colours, video size and layout.
 
-Rendering runs in the background, so KiCad stays usable, and settings are remembered.
+Drag the dividers between sections to resize them. Rendering runs in the background, so KiCad stays usable, and settings (including the dialog's size and layout) are remembered.
 
 | Output | Contents |
 |---|---|

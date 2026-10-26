@@ -144,6 +144,14 @@ def _board_layers(board):
 
 # ------------------------------------------------------------------- dialog
 class RenderDialog(wx.Dialog):
+    """
+    Layout: three sections stacked with draggable dividers (sessions / layers+options /
+    tools+log), and a draggable divider between layers and options. Each section shrinks
+    on its own (lists and options scroll inside themselves), and the divider positions
+    keep their proportions when the window is resized. Sizes are remembered.
+    """
+    SASH_MIN = 80  # px, smallest a section can be dragged to
+
     def __init__(self, parent, board):
         super().__init__(parent, title="PCB Timelapse - Render",
                          style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
@@ -153,31 +161,36 @@ class RenderDialog(wx.Dialog):
         from . import recorder as rec_mod
         self.sp_dir = rec_mod.sessions_dir(board.GetFileName())
         self.out_dir = None
+        c = self.cfg
 
-        # Everything scrolls except the button row, so small screens can reach it all
-        outer = wx.Panel(self)
-        p = wx.ScrolledWindow(outer, style=wx.VSCROLL | wx.HSCROLL)
-        p.SetScrollRate(10, 10)
-        main = wx.BoxSizer(wx.VERTICAL)
+        self.outer = outer = wx.Panel(self)
+        sp = wx.SP_LIVE_UPDATE | wx.SP_3DSASH | wx.SP_NOBORDER
+        self.split_top = wx.SplitterWindow(outer, style=sp)        # sessions | rest
+        self.split_bot = wx.SplitterWindow(self.split_top, style=sp)  # middle | tools+log
+        self.split_mid = wx.SplitterWindow(self.split_bot, style=sp)  # layers | options
+        for s in (self.split_top, self.split_bot, self.split_mid):
+            s.SetMinimumPaneSize(self.SASH_MIN)
+            s.Bind(wx.EVT_SPLITTER_SASH_POS_CHANGED, self._sash_moved)
 
-        # sessions
-        sbox = wx.StaticBoxSizer(wx.VERTICAL, p, "Sessions (tick one or more)")
+        # ---- sessions
+        top = wx.Panel(self.split_top)
+        sbox = wx.StaticBoxSizer(wx.VERTICAL, top, "Sessions (tick one or more)")
         self.session_paths = []
-        self.sessions = wx.CheckListBox(p, size=(-1, 110))
+        self.sessions = wx.CheckListBox(top, size=(-1, 110))
         for d in self._sessions():
             self._add_session(d)
         if self.session_paths:
             self.sessions.Check(0, True)  # newest
         srow = wx.BoxSizer(wx.HORIZONTAL)
-        browse = wx.Button(p, label="Add folder...")
+        browse = wx.Button(top, label="Add folder...")
         browse.Bind(wx.EVT_BUTTON, self._browse)
-        sel_all = wx.Button(p, label="All")
+        sel_all = wx.Button(top, label="All")
         sel_all.Bind(wx.EVT_BUTTON, lambda e: self._check_all(True))
-        sel_none = wx.Button(p, label="None")
+        sel_none = wx.Button(top, label="None")
         sel_none.Bind(wx.EVT_BUTTON, lambda e: self._check_all(False))
-        self.join = wx.RadioButton(p, label="Join into one video", style=wx.RB_GROUP)
-        self.separate = wx.RadioButton(p, label="Render each separately")
-        (self.separate if self.cfg.get("separate") else self.join).SetValue(True)
+        self.join = wx.RadioButton(top, label="Join into one video", style=wx.RB_GROUP)
+        self.separate = wx.RadioButton(top, label="Render each separately")
+        (self.separate if c.get("separate") else self.join).SetValue(True)
         for w in (browse, sel_all, sel_none):
             srow.Add(w, 0, wx.RIGHT, 4)
         srow.AddStretchSpacer()
@@ -185,19 +198,20 @@ class RenderDialog(wx.Dialog):
         srow.Add(self.separate, 0, wx.ALIGN_CENTER_VERTICAL)
         sbox.Add(self.sessions, 1, wx.ALL | wx.EXPAND, 4)
         sbox.Add(srow, 0, wx.ALL | wx.EXPAND, 4)
-        main.Add(sbox, 0, wx.ALL | wx.EXPAND, 6)
+        ts = wx.BoxSizer(wx.VERTICAL)
+        ts.Add(sbox, 1, wx.ALL | wx.EXPAND, 6)
+        top.SetSizer(ts)
 
-        row = wx.BoxSizer(wx.HORIZONTAL)
-
-        # layers
-        lbox = wx.StaticBoxSizer(wx.VERTICAL, p, "Board layers (top of list = drawn on top)")
-        self.layers = wx.CheckListBox(p, size=(220, 260))
-        saved = self.cfg.get("layers")  # [[name, checked], ...] top-first
+        # ---- layers
+        left = wx.Panel(self.split_mid)
+        lbox = wx.StaticBoxSizer(wx.VERTICAL, left, "Board layers (top of list = drawn on top)")
+        self.layers = wx.CheckListBox(left, size=(220, 260))
+        saved = c.get("layers")  # [[name, checked], ...] top-first
         names = list(reversed(_board_layers(board)))
         if saved:
             known = [n for n, _ in saved if n in names]
             names = known + [n for n in names if n not in known]
-            checked = {n for n, c in saved if c}
+            checked = {n for n, on in saved if on}
         else:
             checked = DEFAULT_ON
         self.layers.Set(names)
@@ -205,85 +219,95 @@ class RenderDialog(wx.Dialog):
             self.layers.Check(i, n in checked)
         ud = wx.BoxSizer(wx.HORIZONTAL)
         for lbl, d in (("Up", -1), ("Down", 1)):
-            b = wx.Button(p, label=lbl, size=(60, -1))
+            b = wx.Button(left, label=lbl, size=(60, -1))
             b.Bind(wx.EVT_BUTTON, lambda e, d=d: self._move(d))
             ud.Add(b, 0, wx.RIGHT, 4)
-        reset = wx.Button(p, label="Reset", size=(60, -1))
+        reset = wx.Button(left, label="Reset", size=(60, -1))
         reset.Bind(wx.EVT_BUTTON, self._reset_layers)
         ud.Add(reset)
         lbox.Add(self.layers, 1, wx.ALL | wx.EXPAND, 4)
         lbox.Add(ud, 0, wx.ALL, 4)
-        row.Add(lbox, 1, wx.ALL | wx.EXPAND, 6)
+        ls = wx.BoxSizer(wx.VERTICAL)
+        ls.Add(lbox, 1, wx.LEFT | wx.TOP | wx.BOTTOM | wx.EXPAND, 6)
+        left.SetSizer(ls)
 
-        # options
-        obox = wx.StaticBoxSizer(wx.VERTICAL, p, "Options")
+        # ---- options (scrolls on its own when squeezed)
+        right = wx.Panel(self.split_mid)
+        obox = wx.StaticBoxSizer(wx.VERTICAL, right, "Options")
+        self.opt_scroll = o = wx.ScrolledWindow(right, style=wx.VSCROLL | wx.HSCROLL)
+        o.SetScrollRate(10, 10)
         g = wx.FlexGridSizer(0, 2, 6, 8)
         g.AddGrowableCol(1)
 
         def add(label, ctrl):
-            g.Add(wx.StaticText(p, label=label), 0, wx.ALIGN_CENTER_VERTICAL)
+            g.Add(wx.StaticText(o, label=label), 0, wx.ALIGN_CENTER_VERTICAL)
             g.Add(ctrl, 1, wx.EXPAND)
             return ctrl
 
-        c = self.cfg
-        self.streams = add("Render", wx.Choice(p, choices=["Both", "View only", "Board only"]))
+        self.streams = add("Render", wx.Choice(o, choices=["Both", "View only", "Board only"]))
         self.streams.SetSelection(c.get("streams", 0))
-        self.view_ui = add("View video shows", wx.Choice(p, choices=["Drawing area only",
+        self.view_ui = add("View video shows", wx.Choice(o, choices=["Drawing area only",
                                                                      "Whole editor (with UI)"]))
         self.view_ui.SetSelection(1 if c.get("view_ui") == "full" else 0)
-        self.follow = add("Follow active layer", wx.CheckBox(p))
+        self.follow = add("Follow active layer", wx.CheckBox(o))
         self.follow.SetValue(c.get("follow", True))
-        self.inactive = add("Inactive layer opacity %", wx.SpinCtrl(p, min=5, max=100,
+        self.inactive = add("Inactive layer opacity %", wx.SpinCtrl(o, min=5, max=100,
                                                                      initial=c.get("inactive", 100)))
-        self.bg = add("Background", wx.ColourPickerCtrl(p, colour=wx.Colour(c.get("bg", "#001023"))))
-        self.holes = add("Pad / mounting holes", wx.Choice(p, choices=[lbl for lbl, _ in HOLE_STYLES]))
+        self.bg = add("Background", wx.ColourPickerCtrl(o, colour=wx.Colour(c.get("bg", "#001023"))))
+        self.holes = add("Pad / mounting holes", wx.Choice(o, choices=[lbl for lbl, _ in HOLE_STYLES]))
         hv = c.get("holes", "kicad")
         self.holes.SetSelection(next((i for i, (_, v) in enumerate(HOLE_STYLES) if v == hv), 0))
-        self.via_layer = add("Vias in layer colour", wx.CheckBox(p))
+        self.via_layer = add("Vias in layer colour", wx.CheckBox(o))
         self.via_layer.SetValue(c.get("via_layer", True))
-        self.vias = add("Vias", wx.Choice(p, choices=[lbl for lbl, _ in HOLE_STYLES]))
+        self.vias = add("Vias", wx.Choice(o, choices=[lbl for lbl, _ in HOLE_STYLES]))
         vv = c.get("vias", "kicad")
         self.vias.SetSelection(next((i for i, (_, v) in enumerate(HOLE_STYLES) if v == vv), 0))
-        self.crop = add("Frame", wx.Choice(p, choices=["Board outline", "Everything"]))
+        self.crop = add("Frame", wx.Choice(o, choices=["Board outline", "Everything"]))
         self.crop.SetSelection(c.get("crop", 0))
-        self.fill = add("Shade board area", wx.CheckBox(p))
+        self.fill = add("Shade board area", wx.CheckBox(o))
         self.fill.SetValue(c.get("fill", True))
-        self.outline = add("Outline width (px)", wx.SpinCtrl(p, min=1, max=12, initial=c.get("outline", 3)))
-        self.glow = add("Glow %", wx.SpinCtrl(p, min=0, max=100, initial=c.get("glow", 20)))
-        self.sat = add("Colour boost %", wx.SpinCtrl(p, min=50, max=200, initial=c.get("sat", 120)))
-        self.size = add("Board video size", wx.ComboBox(p, choices=SIZES, value=c.get("size", SIZES[0])))
-        self.fps = add("FPS", wx.SpinCtrl(p, min=1, max=120, initial=c.get("fps", 30)))
-        self.hold = add("Hold last frame (s)", wx.SpinCtrl(p, min=0, max=30, initial=c.get("hold", 3)))
-        self.sync = add("Match view timing", wx.CheckBox(p))
+        self.outline = add("Outline width (px)", wx.SpinCtrl(o, min=1, max=12, initial=c.get("outline", 3)))
+        self.glow = add("Glow %", wx.SpinCtrl(o, min=0, max=100, initial=c.get("glow", 20)))
+        self.sat = add("Colour boost %", wx.SpinCtrl(o, min=50, max=200, initial=c.get("sat", 120)))
+        self.size = add("Board video size", wx.ComboBox(o, choices=SIZES, value=c.get("size", SIZES[0])))
+        self.fps = add("FPS", wx.SpinCtrl(o, min=1, max=120, initial=c.get("fps", 30)))
+        self.hold = add("Hold last frame (s)", wx.SpinCtrl(o, min=0, max=30, initial=c.get("hold", 3)))
+        self.sync = add("Match view timing", wx.CheckBox(o))
         self.sync.SetValue(c.get("sync", True))
-        self.combined = add("Combined video", wx.Choice(p, choices=[lbl for lbl, _ in LAYOUTS]))
+        self.combined = add("Combined video", wx.Choice(o, choices=[lbl for lbl, _ in LAYOUTS]))
         cv = c.get("combined", "auto")
         cv = {True: "auto", False: "off"}.get(cv, cv)  # older settings were a checkbox
         self.combined.SetSelection(next((i for i, (_, v) in enumerate(LAYOUTS) if v == cv), 1))
-        obox.Add(g, 0, wx.ALL | wx.EXPAND, 6)
-        row.Add(obox, 1, wx.ALL | wx.EXPAND, 6)
-        main.Add(row, 1, wx.EXPAND)
+        og = wx.BoxSizer(wx.VERTICAL)
+        og.Add(g, 0, wx.ALL | wx.EXPAND, 6)
+        o.SetSizer(og)
+        obox.Add(o, 1, wx.EXPAND)
+        rs = wx.BoxSizer(wx.VERTICAL)
+        rs.Add(obox, 1, wx.RIGHT | wx.TOP | wx.BOTTOM | wx.EXPAND, 6)
+        right.SetSizer(rs)
 
-        # tools
-        tbox = wx.StaticBoxSizer(wx.VERTICAL, p, "Tools")
+        # ---- tools + log
+        bottom = wx.Panel(self.split_bot)
+        tbox = wx.StaticBoxSizer(wx.VERTICAL, bottom, "Tools")
         tg = wx.FlexGridSizer(0, 2, 6, 8)
         tg.AddGrowableCol(1)
         py = c.get("python") or " ".join(_find_python() or [])
-        tg.Add(wx.StaticText(p, label="Python"), 0, wx.ALIGN_CENTER_VERTICAL)
-        self.python = wx.TextCtrl(p, value=py)
+        tg.Add(wx.StaticText(bottom, label="Python"), 0, wx.ALIGN_CENTER_VERTICAL)
+        self.python = wx.TextCtrl(bottom, value=py)
         tg.Add(self.python, 1, wx.EXPAND)
-        tg.Add(wx.StaticText(p, label="kicad-cli"), 0, wx.ALIGN_CENTER_VERTICAL)
-        self.cli = wx.TextCtrl(p, value=c.get("cli") or _find_kicad_cli())
+        tg.Add(wx.StaticText(bottom, label="kicad-cli"), 0, wx.ALIGN_CENTER_VERTICAL)
+        self.cli = wx.TextCtrl(bottom, value=c.get("cli") or _find_kicad_cli())
         tg.Add(self.cli, 1, wx.EXPAND)
         tbox.Add(tg, 0, wx.ALL | wx.EXPAND, 4)
-        main.Add(tbox, 0, wx.ALL | wx.EXPAND, 6)
+        self.log = wx.TextCtrl(bottom, style=wx.TE_MULTILINE | wx.TE_READONLY, size=(-1, 100))
+        self.gauge = wx.Gauge(bottom, range=100, size=(-1, 8))
+        bs = wx.BoxSizer(wx.VERTICAL)
+        bs.Add(tbox, 0, wx.LEFT | wx.RIGHT | wx.TOP | wx.EXPAND, 6)
+        bs.Add(self.log, 1, wx.LEFT | wx.RIGHT | wx.TOP | wx.EXPAND, 6)
+        bs.Add(self.gauge, 0, wx.LEFT | wx.RIGHT | wx.TOP | wx.EXPAND, 6)
+        bottom.SetSizer(bs)
 
-        # log + buttons
-        self.log = wx.TextCtrl(p, style=wx.TE_MULTILINE | wx.TE_READONLY, size=(-1, 120))
-        main.Add(self.log, 0, wx.ALL | wx.EXPAND, 6)
-        self.gauge = wx.Gauge(p, range=100, size=(-1, 8))
-        main.Add(self.gauge, 0, wx.LEFT | wx.RIGHT | wx.EXPAND, 6)
-
+        # ---- buttons (outside the splitters, always visible)
         btns = wx.BoxSizer(wx.HORIZONTAL)
         self.open_btn = wx.Button(outer, label="Open output folder")
         self.open_btn.Bind(wx.EVT_BUTTON, self._open_out)
@@ -296,16 +320,21 @@ class RenderDialog(wx.Dialog):
         btns.AddStretchSpacer()
         btns.Add(self.run_btn, 0, wx.RIGHT, 6)
         btns.Add(close)
+
+        osz = wx.BoxSizer(wx.VERTICAL)
+        osz.Add(self.split_top, 1, wx.EXPAND)
+        osz.Add(btns, 0, wx.ALL | wx.EXPAND, 6)
+        outer.SetSizer(osz)
+
+        self.split_mid.SplitVertically(left, right)
+        self.split_bot.SplitHorizontally(self.split_mid, bottom)
+        self.split_top.SplitHorizontally(top, self.split_bot)
+
         self.Bind(wx.EVT_CLOSE, self._on_close)
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, lambda e: self.gauge.Pulse(), self.timer)
 
-        p.SetSizer(main)
-        osz = wx.BoxSizer(wx.VERTICAL)
-        osz.Add(p, 1, wx.EXPAND)
-        osz.Add(btns, 0, wx.ALL | wx.EXPAND, 6)
-        outer.SetSizer(osz)
-        self._fit_to_screen(parent, p, main, osz)
+        self._initial_layout(parent, top, left, right, bottom, btns)
         self.CentreOnParent()
 
         if not py:
@@ -315,21 +344,84 @@ class RenderDialog(wx.Dialog):
                       "Run:  pip install pymupdf pillow   then reopen this dialog,\n"
                       f"or type the path to {example} above.")
 
-    def _fit_to_screen(self, parent, scroller, content, outer_sizer):
-        """Natural size if it fits the screen; otherwise as big as fits, and scroll."""
-        scroller.SetMinSize(content.GetMinSize())
-        outer_sizer.Fit(self)  # full natural size
-        want = self.GetSize()
+    # -------------------------------------------------------------- layout
+    def _initial_layout(self, parent, top, left, right, bottom, btns):
+        """Saved size and divider positions if any, else natural sizes shrunk to fit the screen."""
         idx = wx.Display.GetFromWindow(parent) if parent else wx.NOT_FOUND
         area = wx.Display(idx if idx != wx.NOT_FOUND else 0).GetClientArea()
-        w = min(want.width, area.width - 40)
-        h = min(want.height, area.height - 40)
-        if h < want.height:  # vertical scrollbar takes width
-            w = min(w + wx.SystemSettings.GetMetric(wx.SYS_VSCROLL_X), area.width - 40)
-        scroller.SetMinSize(wx.Size(100, 100))  # allow shrinking below natural size
-        self.SetMinSize(wx.Size(min(w, 480), min(h, 360)))
+        max_w, max_h = area.width - 40, area.height - 60
+        sash = self.split_top.GetSashSize()
+        chrome = self.GetSize() - self.GetClientSize()  # title bar + borders
+
+        h_top = top.GetBestSize().height
+        # The options panel scrolls, so its "best size" is tiny; measure the grid inside it
+        need = self.opt_scroll.GetSizer().GetMinSize()
+        box = right.GetBestSize() - self.opt_scroll.GetBestSize()  # static box + margins
+        scrollbar = wx.SystemSettings.GetMetric(wx.SYS_VSCROLL_X)
+        w_right = need.width + box.width + scrollbar
+        h_mid = max(left.GetBestSize().height, need.height + box.height)
+        h_bot = bottom.GetBestSize().height
+        h_btn = btns.GetMinSize().height + 12
+        w_left = left.GetBestSize().width
+        nat_w = max(w_left + w_right + sash, top.GetBestSize().width) + chrome.width
+        nat_h = h_top + h_mid + h_bot + 2 * sash + h_btn + chrome.height
+
+        ui = self.cfg.get("ui") or {}
+        try:
+            w, h = (int(v) for v in ui["size"])
+        except Exception:  # noqa: BLE001
+            w, h = nat_w, nat_h
+        w, h = max(min(w, max_w), 420), max(min(h, max_h), 360)
+
+        # Divider fractions: saved, or natural sizes. If it doesn't fit, shrink the log
+        # first, then the sessions list, and the options (the main part) last.
+        avail = h - h_btn - chrome.height - 2 * sash
+        over = max(0, h_top + h_mid + h_bot - avail)
+        cut_bot = min(over, max(0, h_bot - 175))
+        cut_top = min(over - cut_bot, max(0, h_top - 145))
+        cut_mid = over - cut_bot - cut_top
+        t, m, b = h_top - cut_top, h_mid - cut_mid, h_bot - cut_bot
+        f_top = ui.get("f_top", t / max(1, t + m + b + sash))
+        f_bot = ui.get("f_bot", m / max(1, m + b))
+        f_mid = ui.get("f_mid", w_left / max(1, w_left + w_right))
+        self._fracs = {self.split_top: f_top, self.split_bot: f_bot, self.split_mid: f_mid}
+
+        # Measured; now let everything shrink below its natural size (lists scroll instead)
+        self.split_top.SetMinSize(wx.Size(200, 200))
+        self.sessions.SetMinSize(wx.Size(-1, 30))
+        self.layers.SetMinSize(wx.Size(100, 40))
+        self.log.SetMinSize(wx.Size(-1, 30))
+        self.SetMinSize(wx.Size(min(w, 420), min(h, 360)))
         self.SetSize(wx.Size(w, h))
-        scroller.FitInside()
+        self.Layout()
+        self.outer.Layout()
+        self._apply_fracs()
+        wx.CallAfter(self._apply_fracs)  # again once the window manager has settled the size
+
+    def _apply_fracs(self):
+        if not self:
+            return
+        for s in (self.split_top, self.split_bot, self.split_mid):  # outer first
+            f = min(max(self._fracs[s], 0.05), 0.95)
+            total = s.GetSize().height if s.GetSplitMode() == wx.SPLIT_HORIZONTAL else s.GetSize().width
+            s.SetSashGravity(f)  # resizing the window keeps this proportion
+            s.SetSashPosition(int(total * f))
+            s.UpdateSize()
+        self.opt_scroll.FitInside()
+
+    def _sash_moved(self, e):
+        s = e.GetEventObject()
+        total = s.GetSize().height if s.GetSplitMode() == wx.SPLIT_HORIZONTAL else s.GetSize().width
+        if total > 0:
+            self._fracs[s] = e.GetSashPosition() / total
+            s.SetSashGravity(min(max(self._fracs[s], 0.0), 1.0))
+        e.Skip()
+
+    def _ui_state(self):
+        sz = self.GetSize()
+        return {"size": [sz.width, sz.height],
+                "f_top": self._fracs[self.split_top], "f_bot": self._fracs[self.split_bot],
+                "f_mid": self._fracs[self.split_mid]}
 
     # ------------------------------------------------------------- session
     def _sessions(self):
@@ -438,6 +530,7 @@ class RenderDialog(wx.Dialog):
             "outline": self.outline.GetValue(),
             "glow": self.glow.GetValue(),
             "sat": self.sat.GetValue(),
+            "ui": self._ui_state(),
         }
         return cfg
 
