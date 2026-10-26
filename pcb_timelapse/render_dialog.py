@@ -82,15 +82,21 @@ def _python_ok(cmd):
 
 
 def _find_python():
-    """A Python that isn't KiCad's own and has pymupdf + pillow."""
+    """A Python that isn't KiCad's bundled one and has pymupdf + pillow."""
     kicad_dir = os.path.normcase(os.path.dirname(sys.executable))
+    # On Linux KiCad uses the system Python, which lives next to kicad in /usr/bin,
+    # so only skip KiCad's folder where it ships its own Python (Windows/macOS).
+    skip_kicad_dir = not sys.platform.startswith("linux")
     cands = []
     if shutil.which("py"):
         cands.append(["py", "-3"])
-    for n in ("python", "python3"):
+    for n in ("python3", "python"):
         p = shutil.which(n)
-        if p and os.path.normcase(os.path.dirname(p)) != kicad_dir and "WindowsApps" not in p:
-            cands.append([p])
+        if not p or "WindowsApps" in p or [p] in cands:
+            continue
+        if skip_kicad_dir and os.path.normcase(os.path.dirname(p)) == kicad_dir:
+            continue
+        cands.append([p])
     for c in cands:
         if _python_ok(c):
             return c
@@ -148,7 +154,10 @@ class RenderDialog(wx.Dialog):
         self.sp_dir = rec_mod.sessions_dir(board.GetFileName())
         self.out_dir = None
 
-        p = wx.Panel(self)
+        # Everything scrolls except the button row, so small screens can reach it all
+        outer = wx.Panel(self)
+        p = wx.ScrolledWindow(outer, style=wx.VSCROLL | wx.HSCROLL)
+        p.SetScrollRate(10, 10)
         main = wx.BoxSizer(wx.VERTICAL)
 
         # sessions
@@ -276,32 +285,51 @@ class RenderDialog(wx.Dialog):
         main.Add(self.gauge, 0, wx.LEFT | wx.RIGHT | wx.EXPAND, 6)
 
         btns = wx.BoxSizer(wx.HORIZONTAL)
-        self.open_btn = wx.Button(p, label="Open output folder")
+        self.open_btn = wx.Button(outer, label="Open output folder")
         self.open_btn.Bind(wx.EVT_BUTTON, self._open_out)
         self.open_btn.Disable()
-        self.run_btn = wx.Button(p, label="Render")
+        self.run_btn = wx.Button(outer, label="Render")
         self.run_btn.Bind(wx.EVT_BUTTON, self._run)
-        close = wx.Button(p, label="Close")
+        close = wx.Button(outer, label="Close")
         close.Bind(wx.EVT_BUTTON, lambda e: self.Close())
         btns.Add(self.open_btn)
         btns.AddStretchSpacer()
         btns.Add(self.run_btn, 0, wx.RIGHT, 6)
         btns.Add(close)
-        main.Add(btns, 0, wx.ALL | wx.EXPAND, 6)
-
         self.Bind(wx.EVT_CLOSE, self._on_close)
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, lambda e: self.gauge.Pulse(), self.timer)
 
         p.SetSizer(main)
-        main.Fit(self)
-        self.SetMinSize(self.GetSize())
+        osz = wx.BoxSizer(wx.VERTICAL)
+        osz.Add(p, 1, wx.EXPAND)
+        osz.Add(btns, 0, wx.ALL | wx.EXPAND, 6)
+        outer.SetSizer(osz)
+        self._fit_to_screen(parent, p, main, osz)
         self.CentreOnParent()
 
         if not py:
+            example = ("python.exe, e.g. C:\\Python312\\python.exe" if sys.platform == "win32"
+                       else "your Python, e.g. python3 or /usr/bin/python3")
             self._say("Couldn't find a Python with PyMuPDF + Pillow.\n"
                       "Run:  pip install pymupdf pillow   then reopen this dialog,\n"
-                      "or type the path to python.exe above.")
+                      f"or type the path to {example} above.")
+
+    def _fit_to_screen(self, parent, scroller, content, outer_sizer):
+        """Natural size if it fits the screen; otherwise as big as fits, and scroll."""
+        scroller.SetMinSize(content.GetMinSize())
+        outer_sizer.Fit(self)  # full natural size
+        want = self.GetSize()
+        idx = wx.Display.GetFromWindow(parent) if parent else wx.NOT_FOUND
+        area = wx.Display(idx if idx != wx.NOT_FOUND else 0).GetClientArea()
+        w = min(want.width, area.width - 40)
+        h = min(want.height, area.height - 40)
+        if h < want.height:  # vertical scrollbar takes width
+            w = min(w + wx.SystemSettings.GetMetric(wx.SYS_VSCROLL_X), area.width - 40)
+        scroller.SetMinSize(wx.Size(100, 100))  # allow shrinking below natural size
+        self.SetMinSize(wx.Size(min(w, 480), min(h, 360)))
+        self.SetSize(wx.Size(w, h))
+        scroller.FitInside()
 
     # ------------------------------------------------------------- session
     def _sessions(self):

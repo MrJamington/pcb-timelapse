@@ -28,7 +28,7 @@ Tested on Windows. Linux and macOS should work, but are less tested; lock-screen
 
 **KiCad Plugin and Content Manager:** search for *PCB Timelapse*, once it's listed.
 
-**Manually:** copy this folder into your plugins folder (in the PCB Editor, **Tools → External Plugins → Open Plugin Directory**), then **Tools → External Plugins → Refresh Plugins**.
+**Manually:** copy this folder into your plugins folder (in the PCB Editor, **Tools → External Plugins → Open Plugin Directory**), then **Tools → External Plugins → Refresh Plugins**. On Linux the plugins folder is usually `~/.local/share/kicad/<version>/scripting/plugins/`.
 
 Three buttons appear on the toolbar:
 

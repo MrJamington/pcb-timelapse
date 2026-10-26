@@ -12,20 +12,9 @@ You can render them separately, side by side, or stacked.
 
 Recording only runs while the PCB Editor is the window you're using. Alt-tab, sleep or the lock screen pause it, and that time doesn't count.
 
-   ![PCB Timelapse: the zoomed editor view on the left, the whole board building up on the right](docs/demo.gif)
+![PCB Timelapse: the zoomed editor view on the left, the whole board building up on the right](docs/demo.gif)
 
-   *Left: the editor view while routing. Right: the board video, which follows the copper layer being worked on (2× speed).*
-
-<details>
-<summary>▶ Full-quality video (real speed)</summary>
-
-https://github.com/user-attachments/assets/558e34e8-116a-42f5-b8ec-85543dcca87b
-
-<sub>ps. don't judge my board</sub>
-
-</details>
-
-
+*Left: the editor view while routing. Right: the board video, which follows the copper layer being worked on (2× speed).*
 
 ## Requirements
 
@@ -41,7 +30,7 @@ Tested on Windows. Linux and macOS should work, but are less tested; lock-screen
 
 **KiCad Plugin and Content Manager:** search for *PCB Timelapse*, once it's listed.
 
-**Manually:** download `pcb-timelapse-<version>-manual.zip` from [Releases](https://github.com/MrJamington/pcb-timelapse/releases) and unzip it into your plugins folder (in the PCB Editor, **Tools → External Plugins → Open Plugin Directory**), then **Tools → External Plugins → Refresh Plugins**.
+**Manually:** download `pcb-timelapse-<version>-manual.zip` from [Releases](https://github.com/MrJamington/pcb-timelapse/releases) and unzip it into your plugins folder (in the PCB Editor, **Tools → External Plugins → Open Plugin Directory**), then **Tools → External Plugins → Refresh Plugins**. You can also copy the `pcb_timelapse` folder straight from this repo instead of the zip. On Linux the plugins folder is usually `~/.local/share/kicad/<version>/scripting/plugins/`.
 
 Three buttons appear on the toolbar:
 
