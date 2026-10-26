@@ -147,6 +147,7 @@ python render.py REC --hide B.Silkscreen --holes cyan --vias kicad --view-ui ful
 ## Troubleshooting
 
 - **The view video is black or shows the wrong area:** set Capture to the other mode in the PCB Timelapse window.
+- **The view video is black on Linux:** if your desktop uses Wayland, KiCad may not allow screenshots. Try running KiCad under X11 instead, e.g. launch it with `GDK_BACKEND=x11 kicad`, or pick an X11 session at login.
 - **The board video doesn't change:** check the Project Backup settings above, or save more often.
 - **The render dialog can't find Python:** run `pip install pymupdf pillow` in your normal Python, or paste the path to `python.exe` into the dialog.
 - **Clicking a button marks the board as modified (`*`):** this was a KiCad behaviour with old-style plugins. PCB Timelapse intercepts its own buttons to avoid it, but if KiCad changes its toolbar, the `*` may come back. It's harmless.
