@@ -102,6 +102,18 @@ def save_settings(**changes):
 load_settings()
 
 
+def window_icons(png):
+    """Title bar / taskbar icons for our windows, from one of the plugin's PNGs."""
+    bundle = wx.IconBundle()
+    try:
+        img = wx.Image(os.path.join(HERE, png))
+        for size in (16, 24, 32, 48, 64, 96):
+            bundle.AddIcon(wx.Icon(wx.Bitmap(img.Scale(size, size, wx.IMAGE_QUALITY_HIGH))))
+    except Exception:  # noqa: BLE001 - an icon is never worth failing over
+        pass
+    return bundle
+
+
 def _state():
     """
     Shared state, kept on the `sys` module so it survives 'Refresh Plugins'

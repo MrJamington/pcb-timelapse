@@ -153,6 +153,7 @@ class ControlWindow(wx.Frame):
         self._reload_sessions()
         self._refresh_status()
         self._options_changed(None)
+        self.SetIcons(sp.window_icons("icon_rec.png"))
         self.CentreOnParent()
 
     # ----------------------------------------------------------- recording

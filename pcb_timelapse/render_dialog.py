@@ -194,6 +194,7 @@ class RenderDialog(wx.Dialog):
         if self.session_paths:
             self.sessions.Check(0, True)  # newest
         self.sessions.Bind(wx.EVT_CONTEXT_MENU, self._session_menu)
+        self.sessions.Bind(wx.EVT_KILL_FOCUS, self._clear_selection)
         srow = wx.BoxSizer(wx.HORIZONTAL)
         browse = wx.Button(top, label="Add folder...")
         browse.Bind(wx.EVT_BUTTON, self._browse)
@@ -231,10 +232,13 @@ class RenderDialog(wx.Dialog):
         for i, n in enumerate(names):
             self.layers.Check(i, n in checked)
         ud = wx.BoxSizer(wx.HORIZONTAL)
+        self.move_btns = []
         for lbl, d in (("Up", -1), ("Down", 1)):
             b = wx.Button(left, label=lbl, size=(60, -1))
             b.Bind(wx.EVT_BUTTON, lambda e, d=d: self._move(d))
             ud.Add(b, 0, wx.RIGHT, 4)
+            self.move_btns.append(b)
+        self.layers.Bind(wx.EVT_KILL_FOCUS, self._clear_selection)
         reset = wx.Button(left, label="Reset", size=(60, -1))
         reset.Bind(wx.EVT_BUTTON, self._reset_layers)
         ud.Add(reset)
@@ -350,6 +354,8 @@ class RenderDialog(wx.Dialog):
         self.timer = wx.Timer(self)
         self.Bind(wx.EVT_TIMER, lambda e: self.gauge.Pulse(), self.timer)
 
+        from . import recorder as rec_icons
+        self.SetIcons(rec_icons.window_icons("icon_render.png"))
         self._initial_layout(parent, top, left, right, bottom, btns)
         self.CentreOnParent()
 
@@ -497,6 +503,14 @@ class RenderDialog(wx.Dialog):
                 if not found:
                     wx.MessageBox("No sessions found there (looking for log.csv).", "PCB Timelapse")
         dlg.Destroy()
+
+    def _clear_selection(self, e):
+        """Drop a list's highlight when you click elsewhere (ticks are what count).
+        The layer list keeps it while Up/Down are being used."""
+        lst = e.GetEventObject()
+        if not (lst is self.layers and e.GetWindow() in self.move_btns):
+            wx.CallAfter(lambda: lst and lst.SetSelection(wx.NOT_FOUND))
+        e.Skip()
 
     def _session_menu(self, e):
         """Right-click on a session: open it, open its renders, or delete it."""
