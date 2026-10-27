@@ -125,7 +125,7 @@ python render.py REC --hide B.Silkscreen --holes cyan --vias kicad --view-ui ful
 | `--hide` | Drop layers from the stack |
 | `--opacity LAYER=x` | Fade a layer (repeatable) |
 | `--theme NAME` | KiCad colour theme (default: your editor theme) |
-| `--holes` | Pad and mounting holes: `kicad` (editor look: gold plated holes, cyan-outlined non-plated), `dark`, `board` (board colour), or a `white` / `cyan` / `gold` ring |
+| `--holes` | Pad and mounting holes: `kicad` (editor look: gold plated holes, cyan-outlined non-plated), `dark`, `board` (board colour), `cyan-solid` (filled cyan), or a `white` / `cyan` / `gold` ring |
 | `--vias` | Via holes, same choices |
 | `--via-colour layer\|plot` | Via copper in each copper layer's colour like the editor (default), or KiCad's plotted via colour |
 | `--crop edge\|all` | Frame the board outline, or everything on the final board |

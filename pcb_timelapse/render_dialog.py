@@ -26,7 +26,7 @@ def _settings_path():
 SETTINGS = _settings_path()
 
 HOLE_STYLES = [("KiCad (gold plated)", "kicad"), ("Dark", "dark"), ("Board colour", "board"), ("White ring", "white"),
-               ("Cyan ring", "cyan"), ("Gold ring", "gold")]
+               ("Cyan ring", "cyan"), ("Cyan (solid)", "cyan-solid"), ("Gold ring", "gold")]
 LAYOUTS = [("Off", "off"), ("Auto", "auto"), ("Side by side", "side"), ("Board below", "below")]
 SIZES = ["auto", "1920x1080", "2560x1440", "3840x2160", "1080x1080", "1080x1920"]
 NO_WINDOW = 0x08000000 if sys.platform == "win32" else 0  # CREATE_NO_WINDOW

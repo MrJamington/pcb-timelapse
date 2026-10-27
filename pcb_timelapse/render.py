@@ -439,6 +439,7 @@ def holes_mask(path, zoom, clip, W, H, ox, oy, kind="all", vias=(), plating="any
 
 
 HOLE_RINGS = {"white": (235, 235, 235), "cyan": (0, 215, 255), "gold": (222, 175, 60)}
+HOLE_FILLS = {"cyan-solid": HOLE_RINGS["cyan"]}  # whole hole filled with the colour
 # KiCad default theme: plated pad hole, via hole, hole wall, non-plated hole
 KICAD_PAD_HOLE = (194, 194, 0)
 KICAD_VIA_HOLE = (227, 183, 46)
@@ -600,6 +601,8 @@ def render_board_frame(job):
                 continue
             if hstyle == "board":
                 canvas.paste((style["fill"] or bg) + (255,), (0, 0), hm)
+            elif hstyle in HOLE_FILLS:
+                canvas.paste(HOLE_FILLS[hstyle] + (255,), (0, 0), hm)
             elif hstyle in HOLE_RINGS:
                 ring = ImageChops.subtract(hm.filter(ImageFilter.MaxFilter(k)), hm)
                 canvas.paste(HOLE_RINGS[hstyle] + (255,), (0, 0), ring)
@@ -683,13 +686,13 @@ def main():
     ap.add_argument("--bg", default="#001023", help="board background colour")
     ap.add_argument("--theme", help="KiCad colour theme name (default: your editor theme)")
     ap.add_argument("--holes", default="kicad",
-                    choices=["kicad", "dark", "board", "white", "cyan", "gold",
+                    choices=["kicad", "dark", "board", "white", "cyan", "cyan-solid", "gold",
                              "actual", "small", "none"],
                     help="pad and mounting holes: kicad (like the editor: gold plated holes, "
-                         "cyan non-plated), dark, board (board colour), or a white/cyan/gold ring")
+                         "cyan non-plated), dark, board (board colour), cyan-solid, or a white/cyan/gold ring")
     ap.add_argument("--via-colour", choices=["layer", "plot"], default="layer",
                     help="via copper in each layer's colour like the editor, or KiCad's plotted via colour")
-    ap.add_argument("--vias", default="kicad", choices=["kicad", "dark", "board", "white", "cyan", "gold"],
+    ap.add_argument("--vias", default="kicad", choices=["kicad", "dark", "board", "white", "cyan", "cyan-solid", "gold"],
                     help="via holes, same choices as --holes")
     ap.add_argument("--crop", choices=["edge", "all"], default="edge",
                     help="frame the board outline, or everything on the final board")
