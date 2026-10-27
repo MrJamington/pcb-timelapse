@@ -12,6 +12,7 @@ import pcbnew
 import wx
 
 from . import recorder as sp
+from .version import VERSION
 
 AUTO_CHOICES = [("Off", "off"), ("Boards with auto-record ticked", "marked"), ("Every board I open", "always")]
 CAPTURE_CHOICES = [("Whole editor (UI on/off chosen when rendering)", "window"),
@@ -29,7 +30,7 @@ def _human(n):
 class ControlWindow(wx.Frame):
     def __init__(self, parent, board):
         style = wx.DEFAULT_FRAME_STYLE & ~wx.MAXIMIZE_BOX | wx.FRAME_FLOAT_ON_PARENT
-        super().__init__(parent, title="PCB Timelapse", style=style)
+        super().__init__(parent, title=f"PCB Timelapse {VERSION}", style=style)
         self.board_path = board.GetFileName()
         self.paths = []
 

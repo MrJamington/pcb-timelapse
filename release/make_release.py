@@ -14,6 +14,8 @@ Writes to ./dist/:
 import argparse
 import hashlib
 import json
+import sys
+import re
 import os
 import shutil
 import zipfile
@@ -53,9 +55,23 @@ def main():
                                   "Reuses the existing build so the checksum matches what you uploaded")
     a = ap.parse_args()
 
-    with open(os.path.join(HERE, "metadata.json")) as f:
-        meta = json.load(f)
-    ver = meta["versions"][0]["version"]
+    # version.py is the single source of the version; copy it into metadata.json
+    with open(os.path.join(a.plugin_dir, "version.py")) as f:
+        m = re.search(r'VERSION\s*=\s*"([^"]+)"', f.read())
+    if not m:
+        sys.exit("couldn't read VERSION from version.py")
+    ver = m.group(1)
+    meta_path = os.path.join(HERE, "metadata.json")
+    with open(meta_path) as f:
+        text = f.read()
+    meta = json.loads(text)
+    if meta["versions"][0]["version"] != ver:
+        old = meta["versions"][0]["version"]
+        text = text.replace(f'"version": "{old}"', f'"version": "{ver}"', 1)
+        with open(meta_path, "w") as f:
+            f.write(text)
+        meta = json.loads(text)
+        print(f"metadata.json: version {old} -> {ver} (from version.py)")
     dist = os.path.join(HERE, "dist")
     pcm = os.path.join(dist, f"pcb-timelapse-{ver}-pcm.zip")
     reuse = bool(a.url) and os.path.exists(pcm)

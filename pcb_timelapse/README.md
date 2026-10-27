@@ -26,9 +26,9 @@ Tested on Windows. Linux and macOS should work, but are less tested; lock-screen
 
 ## Install
 
-**KiCad Plugin and Content Manager:** search for *PCB Timelapse*, once it's listed.
+**Recommended:** download `pcb-timelapse-<version>-pcm.zip` from [Releases](https://github.com/MrJamington/pcb-timelapse/releases). In KiCad's main window, open **Tools → Plugin and Content Manager**, click **Install from File...** and pick the zip. KiCad then shows the version, and you can update or uninstall it from the same window.
 
-**Manually:** copy this folder into your plugins folder (in the PCB Editor, **Tools → External Plugins → Open Plugin Directory**), then **Tools → External Plugins → Refresh Plugins**. The plugins folder is usually:
+**Manually:** if you'd rather manage the files yourself, copy this folder into your plugins folder (in the PCB Editor, **Tools → External Plugins → Open Plugin Directory**), then **Tools → External Plugins → Refresh Plugins**. The plugins folder is usually:
 
 - Windows: `%USERPROFILE%\Documents\KiCad\<version>\scripting\plugins\`
 - macOS: `~/Documents/KiCad/<version>/scripting/plugins/`
@@ -97,6 +97,7 @@ To ignore everything, use `**/pcb_timelapse/`.
 Click the render button, or **Render…** in the PCB Timelapse window.
 
 - Tick one or more recordings, then join them into one continuous video or render each separately.
+- Right-click a recording to open its folder or its renders, or to delete it (its videos are kept). **Open renders folder** opens all of this board's videos.
 - Tick, untick and reorder board layers. The top of the list is drawn on top.
 - Choose the look: holes, vias, board fill, outline, glow, colours, video size and layout.
 

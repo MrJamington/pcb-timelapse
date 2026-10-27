@@ -16,6 +16,8 @@ import time
 import pcbnew
 import wx
 
+from .version import VERSION
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 RENDER_PY = os.path.join(HERE, "render.py")
 def _settings_path():
@@ -142,6 +144,16 @@ def _board_layers(board):
     return sorted(names, key=_layer_sort_key)
 
 
+def _open_path(path):
+    """Open a folder in the file manager."""
+    if not path or not os.path.isdir(path):
+        return
+    if sys.platform == "win32":
+        os.startfile(path)  # noqa: S606
+    else:
+        subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", path])
+
+
 # ------------------------------------------------------------------- dialog
 class RenderDialog(wx.Dialog):
     """
@@ -153,7 +165,7 @@ class RenderDialog(wx.Dialog):
     SASH_MIN = 80  # px, smallest a section can be dragged to
 
     def __init__(self, parent, board):
-        super().__init__(parent, title="PCB Timelapse - Render",
+        super().__init__(parent, title=f"PCB Timelapse {VERSION} - Render",
                          style=wx.DEFAULT_DIALOG_STYLE | wx.RESIZE_BORDER)
         self.board = board
         self.proc = None
@@ -174,13 +186,14 @@ class RenderDialog(wx.Dialog):
 
         # ---- sessions
         top = wx.Panel(self.split_top)
-        sbox = wx.StaticBoxSizer(wx.VERTICAL, top, "Sessions (tick one or more)")
+        sbox = wx.StaticBoxSizer(wx.VERTICAL, top, "Sessions (tick one or more, right-click to open or delete)")
         self.session_paths = []
         self.sessions = wx.CheckListBox(top, size=(-1, 110))
         for d in self._sessions():
             self._add_session(d)
         if self.session_paths:
             self.sessions.Check(0, True)  # newest
+        self.sessions.Bind(wx.EVT_CONTEXT_MENU, self._session_menu)
         srow = wx.BoxSizer(wx.HORIZONTAL)
         browse = wx.Button(top, label="Add folder...")
         browse.Bind(wx.EVT_BUTTON, self._browse)
@@ -309,14 +322,17 @@ class RenderDialog(wx.Dialog):
 
         # ---- buttons (outside the splitters, always visible)
         btns = wx.BoxSizer(wx.HORIZONTAL)
-        self.open_btn = wx.Button(outer, label="Open output folder")
+        self.open_btn = wx.Button(outer, label="Open last render")
         self.open_btn.Bind(wx.EVT_BUTTON, self._open_out)
         self.open_btn.Disable()
+        renders_btn = wx.Button(outer, label="Open renders folder")
+        renders_btn.Bind(wx.EVT_BUTTON, self._open_renders)
         self.run_btn = wx.Button(outer, label="Render")
         self.run_btn.Bind(wx.EVT_BUTTON, self._run)
         close = wx.Button(outer, label="Close")
         close.Bind(wx.EVT_BUTTON, lambda e: self.Close())
-        btns.Add(self.open_btn)
+        btns.Add(self.open_btn, 0, wx.RIGHT, 6)
+        btns.Add(renders_btn)
         btns.AddStretchSpacer()
         btns.Add(self.run_btn, 0, wx.RIGHT, 6)
         btns.Add(close)
@@ -482,6 +498,61 @@ class RenderDialog(wx.Dialog):
                     wx.MessageBox("No sessions found there (looking for log.csv).", "PCB Timelapse")
         dlg.Destroy()
 
+    def _session_menu(self, e):
+        """Right-click on a session: open it, open its renders, or delete it."""
+        i = wx.NOT_FOUND
+        pos = e.GetPosition()
+        if pos != wx.DefaultPosition:  # mouse; the menu key gives DefaultPosition
+            i = self.sessions.HitTest(self.sessions.ScreenToClient(pos))
+        if i == wx.NOT_FOUND:
+            i = self.sessions.GetSelection()
+        if i == wx.NOT_FOUND:
+            return
+        self.sessions.SetSelection(i)
+        d = self.session_paths[i]
+        from . import recorder as sp
+        renders = sp.renders_dir(os.path.dirname(d), os.path.basename(d))
+        menu = wx.Menu()
+        open_rec = menu.Append(wx.ID_ANY, "Open recording folder")
+        open_ren = menu.Append(wx.ID_ANY, "Open its renders")
+        open_ren.Enable(os.path.isdir(renders))
+        menu.AppendSeparator()
+        delete = menu.Append(wx.ID_ANY, "Delete recording...")
+        menu.Bind(wx.EVT_MENU, lambda _e: _open_path(d), open_rec)
+        menu.Bind(wx.EVT_MENU, lambda _e: _open_path(renders), open_ren)
+        menu.Bind(wx.EVT_MENU, lambda _e: self._delete_session(d), delete)
+        self.sessions.PopupMenu(menu)
+        menu.Destroy()
+
+    def _delete_session(self, d):
+        from . import recorder as sp
+        st = sp._state()
+        rec = st.get("rec")
+        if rec is not None and os.path.abspath(rec.root) == d:
+            wx.MessageBox("The recording in progress can't be deleted; stop it first.", "PCB Timelapse")
+            return
+        if self.proc is not None:
+            wx.MessageBox("Wait for the render to finish (or cancel it) first.", "PCB Timelapse")
+            return
+        mb = sp.session_info(d, with_size=True)["bytes"] / 1e6
+        if wx.MessageBox(f"Permanently delete this recording ({mb:.1f} MB)?\n\n{sp.session_label(d)}\n\n"
+                         "Its rendered videos are kept (in the renders folder).", "PCB Timelapse",
+                         wx.YES_NO | wx.NO_DEFAULT | wx.ICON_WARNING) != wx.YES:
+            return
+        shutil.rmtree(d, ignore_errors=True)
+        if os.path.exists(d):
+            wx.MessageBox("Couldn't delete all of it; a file may be open elsewhere.", "PCB Timelapse")
+            return
+        i = self.session_paths.index(d)
+        self.session_paths.pop(i)
+        self.sessions.Delete(i)
+        win = st.get("control_win")  # keep the PCB Timelapse window's list in sync
+        if win:
+            try:
+                win._reload_sessions()
+            except Exception:  # noqa: BLE001
+                pass
+
     # -------------------------------------------------------------- layers
     def _move(self, d):
         i = self.layers.GetSelection()
@@ -629,11 +700,12 @@ class RenderDialog(wx.Dialog):
             self.open_btn.Enable()
 
     def _open_out(self, _e):
-        if self.out_dir and os.path.isdir(self.out_dir):
-            if sys.platform == "win32":
-                os.startfile(self.out_dir)  # noqa: S606
-            else:
-                subprocess.Popen(["xdg-open" if sys.platform != "darwin" else "open", self.out_dir])
+        _open_path(self.out_dir)
+
+    def _open_renders(self, _e):
+        path = os.path.join(self.sp_dir, "renders")
+        os.makedirs(path, exist_ok=True)
+        _open_path(path)
 
     def _on_close(self, _e):
         if self.proc is not None:
