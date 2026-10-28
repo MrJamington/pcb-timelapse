@@ -51,9 +51,14 @@ SKIP_DUPLICATE_VIEWS = True
 AUTO_START = "marked"      # "off"    - only the toolbar button starts recording
                            # "marked" - auto-start boards you've ticked "auto-record" for
                            # "always" - auto-start every board you open
+STORE_IN = "outside"       # "outside" - <STORE_DIR>/<board name> (<id>)/, outside the project
+                           #   (KiCad's backup on save scans the whole project folder,
+                           #   so thousands of screenshots in it slow every save down)
+                           # "project" - <board folder>/pcb_timelapse/, next to the board
+STORE_DIR = ""             # base folder for "outside"; empty = Documents/PCB Timelapse
 # --------------------------------------------------------------------------
 
-AUTOSTART_MARKER = ".autostart"   # lives in <board folder>/pcb_timelapse/
+AUTOSTART_MARKER = ".autostart"   # lives in <board folder>/pcb_timelapse/, wherever recordings are stored
 
 # Settings changed in the PCB Timelapse window are saved here and override the
 # defaults above
@@ -72,7 +77,7 @@ def settings_dir():
 
 
 SETTINGS_FILE = os.path.join(settings_dir(), "recorder_settings.json")
-SETTING_NAMES = ("AUTO_START", "CAPTURE_MODE", "VIEW_INTERVAL_S", "BOARD_SOURCE")
+SETTING_NAMES = ("AUTO_START", "CAPTURE_MODE", "VIEW_INTERVAL_S", "BOARD_SOURCE", "STORE_IN", "STORE_DIR")
 
 
 def load_settings():
@@ -128,7 +133,12 @@ def _state():
 
 
 def _marker_path(board_path):
-    return os.path.join(sessions_dir(board_path), AUTOSTART_MARKER)
+    """Small per-project files stay in the project; only recordings may live outside it."""
+    return os.path.join(project_sessions_dir(board_path), AUTOSTART_MARKER)
+
+
+def autostart_marked(board_path):
+    return os.path.exists(_marker_path(board_path))
 
 
 def _set_autostart(board_path, on):
@@ -351,12 +361,69 @@ def _next_index(folder, prefix):
     return best + 1
 
 
-FOLDER_NAME = "pcb_timelapse"     # next to the board
+FOLDER_NAME = "pcb_timelapse"     # STORE_IN = "project": <board folder>/pcb_timelapse/
 RENDERS = "renders"                 # <folder>/renders/<recording>/ - kept when recordings are deleted
 
 
-def sessions_dir(board_path):
+def board_key(board_path):
+    """'<board name> (<id>)': readable, and unique per board file."""
+    full = os.path.normcase(os.path.abspath(board_path))
+    stem = os.path.splitext(os.path.basename(board_path))[0]
+    return f"{stem} ({hashlib.md5(full.encode('utf-8')).hexdigest()[:6]})"
+
+
+def default_store_dir():
+    try:
+        docs = wx.StandardPaths.Get().GetDocumentsDir()
+    except Exception:  # noqa: BLE001
+        docs = ""
+    return os.path.join(docs or os.path.join(os.path.expanduser("~"), "Documents"), "PCB Timelapse")
+
+
+def store_dir():
+    return STORE_DIR or default_store_dir()
+
+
+def project_sessions_dir(board_path):
     return os.path.join(os.path.dirname(board_path), FOLDER_NAME)
+
+
+def outside_sessions_dir(board_path):
+    return os.path.join(store_dir(), board_key(board_path))
+
+
+def sessions_dir(board_path):
+    """Where new recordings for this board go (the current setting)."""
+    if STORE_IN == "project":
+        return project_sessions_dir(board_path)
+    return outside_sessions_dir(board_path)
+
+
+def session_roots(board_path):
+    """Every folder this board's recordings may be in: the current one first."""
+    roots = [sessions_dir(board_path), project_sessions_dir(board_path), outside_sessions_dir(board_path)]
+    out = []
+    for r in roots:
+        if os.path.normcase(r) not in (os.path.normcase(x) for x in out):
+            out.append(r)
+    return out
+
+
+def move_session(d, dest_root):
+    """Move a recording, and its rendered videos, into another folder. Returns the new path."""
+    src_root, name = os.path.dirname(d), os.path.basename(d)
+    if os.path.normcase(src_root) == os.path.normcase(dest_root):
+        return d
+    dst = os.path.join(dest_root, name)
+    if os.path.exists(dst):
+        raise OSError(f"{dst} already exists")
+    os.makedirs(dest_root, exist_ok=True)
+    shutil.move(d, dst)
+    vids = renders_dir(src_root, name)
+    if os.path.isdir(vids) and not os.path.exists(renders_dir(dest_root, name)):
+        os.makedirs(os.path.join(dest_root, RENDERS), exist_ok=True)
+        shutil.move(vids, renders_dir(dest_root, name))
+    return dst
 
 
 def renders_dir(root, name):
@@ -365,15 +432,16 @@ def renders_dir(root, name):
 
 
 def list_sessions(board_path):
-    """This board's recordings, newest first."""
-    root = sessions_dir(board_path)
-    try:
-        names = os.listdir(root)
-    except OSError:
-        return []
-    out = [os.path.join(root, n) for n in names
-           if os.path.exists(os.path.join(root, n, "log.csv"))]
-    return sorted(out, reverse=True)
+    """This board's recordings, wherever they're stored, newest first."""
+    out = []
+    for root in session_roots(board_path):
+        try:
+            names = os.listdir(root)
+        except OSError:
+            continue
+        out += [os.path.join(root, n) for n in names
+                if os.path.exists(os.path.join(root, n, "log.csv"))]
+    return sorted(out, key=os.path.basename, reverse=True)
 
 
 def session_info(d, with_size=False):
@@ -863,7 +931,7 @@ class AutoStarter:
             return
         if rec is None and path and frame is not None and path not in self.declined:
             if AUTO_START == "always" or (AUTO_START == "marked"
-                                          and os.path.exists(_marker_path(path))):
+                                          and autostart_marked(path)):
                 try:
                     st["rec"] = Recorder(board, auto=True)
                 except Exception as e:  # noqa: BLE001
@@ -990,7 +1058,7 @@ def toggle_recording():
         summary = "Recording stopped. Nothing was captured, so the session was discarded."
 
     if AUTO_START == "marked":
-        on = os.path.exists(_marker_path(rec.board_path))
+        on = autostart_marked(rec.board_path)
         ans = wx.MessageBox(summary + "\n\nAuto-record this board whenever it's opened?"
                             + ("\n(currently ON)" if on else ""),
                             "PCB Timelapse", wx.YES_NO | wx.ICON_QUESTION)

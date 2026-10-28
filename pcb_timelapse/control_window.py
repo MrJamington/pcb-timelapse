@@ -18,6 +18,7 @@ from .version import VERSION
 AUTO_CHOICES = [("Off", "off"), ("Boards with auto-record ticked", "marked"), ("Every board I open", "always")]
 CAPTURE_CHOICES = [("Whole editor (UI on/off chosen when rendering)", "window"),
                    ("Drawing area only (smaller files)", "canvas")]
+STORE_CHOICES = [("Outside the project (faster saves)", "outside"), ("Next to the board, in the project", "project")]
 SOURCE_CHOICES = [("Saves and autosaves (safe)", "safe"), ("Live board, every few s (can crash KiCad)", "live")]
 
 
@@ -91,7 +92,18 @@ class ControlWindow(wx.Frame):
         self.source = add("Board snapshots from", wx.Choice(p, choices=[l for l, _ in SOURCE_CHOICES]))
         self.source.SetSelection(next((i for i, (_, v) in enumerate(SOURCE_CHOICES)
                                        if v == sp.BOARD_SOURCE), 0))
-        for c in (self.auto, self.capture, self.source):
+        self.store = add("Store recordings", wx.Choice(p, choices=[l for l, _ in STORE_CHOICES]))
+        self.store.SetSelection(next((i for i, (_, v) in enumerate(STORE_CHOICES)
+                                      if v == sp.STORE_IN), 0))
+        frow = wx.BoxSizer(wx.HORIZONTAL)
+        self.store_path = wx.StaticText(p, label="", style=wx.ST_ELLIPSIZE_MIDDLE)
+        self.store_change = wx.Button(p, label="Change...", style=wx.BU_EXACTFIT)
+        self.store_change.Bind(wx.EVT_BUTTON, self._change_store_dir)
+        frow.Add(self.store_path, 1, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 6)
+        frow.Add(self.store_change, 0, wx.ALIGN_CENTER_VERTICAL)
+        g.Add(wx.StaticText(p, label=""), 0)
+        g.Add(frow, 1, wx.EXPAND)
+        for c in (self.auto, self.capture, self.source, self.store):
             c.Bind(wx.EVT_CHOICE, self._options_changed)
         self.auto_this.Bind(wx.EVT_CHECKBOX, self._options_changed)
         self.interval.Bind(wx.EVT_SPINCTRLDOUBLE, self._options_changed)
@@ -134,7 +146,10 @@ class ControlWindow(wx.Frame):
         vids.Bind(wx.EVT_BUTTON, self._open_renders)
         render = wx.Button(p, label="Render...")
         render.Bind(wx.EVT_BUTTON, self._render)
-        for b in (delete, caches, folder, vids):
+        move = wx.Button(p, label="Move ticked here")
+        move.SetToolTip("Move the ticked recordings (and their videos) to where new recordings are stored")
+        move.Bind(wx.EVT_BUTTON, self._move_ticked)
+        for b in (delete, caches, move, folder, vids):
             r2.Add(b, 0, wx.RIGHT, 4)
         r2.AddStretchSpacer()
         r2.Add(render)
@@ -217,7 +232,11 @@ class ControlWindow(wx.Frame):
             CAPTURE_MODE=CAPTURE_CHOICES[self.capture.GetSelection()][1],
             VIEW_INTERVAL_S=float(self.interval.GetValue()),
             BOARD_SOURCE=SOURCE_CHOICES[self.source.GetSelection()][1],
+            STORE_IN=STORE_CHOICES[self.store.GetSelection()][1],
         )
+        self.store_path.SetLabel(sp.sessions_dir(self.board_path))
+        self.store_path.SetToolTip(sp.sessions_dir(self.board_path))
+        self.store_change.Enable(sp.STORE_IN == "outside")
         sp._set_autostart(self.board_path, self.auto_this.GetValue())
         self.auto_this.Enable(sp.AUTO_START == "marked")
         notes = []
@@ -252,11 +271,15 @@ class ControlWindow(wx.Frame):
     def _labels(self):
         rec = self._rec()
         current = rec.root if rec else None
+        here = os.path.normcase(sp.sessions_dir(self.board_path))
+        in_proj = os.path.normcase(sp.project_sessions_dir(self.board_path))
         labels = []
         for d, info, size in zip(self.paths, self.infos, self.sizes):
             tag = "   ● recording" if d == current else ""
             if os.path.isdir(sp.renders_dir(os.path.dirname(d), os.path.basename(d))):
                 tag += "   ▶ rendered"
+            if os.path.normcase(os.path.dirname(d)) != here:
+                tag += "   (in project)" if os.path.normcase(os.path.dirname(d)) == in_proj else "   (elsewhere)"
             labels.append(f"{sp.session_label(d)}    {info['seconds'] / 60:.1f} min · "
                           f"{info['frames']} frame{'s' if info['frames'] != 1 else ''} · "
                           f"{_human(size) if size is not None else '…'}{tag}")
@@ -319,8 +342,9 @@ class ControlWindow(wx.Frame):
             if os.path.isdir(c):
                 freed += sp.session_info(c, with_size=True)["bytes"]
                 shutil.rmtree(c, ignore_errors=True)
-        root = sp.sessions_dir(self.board_path)  # joined renders keep caches too
-        if not self._ticked() and os.path.isdir(root):
+        for root in sp.session_roots(self.board_path) if not self._ticked() else []:
+            if not os.path.isdir(root):  # joined renders keep caches too
+                continue
             for name in os.listdir(root):
                 c = os.path.join(root, name, "cache")
                 if name.startswith("joined_") and os.path.isdir(c):
@@ -331,8 +355,8 @@ class ControlWindow(wx.Frame):
         self._reload_sessions()
 
     def _open_renders(self, _e):
-        root = sp.sessions_dir(self.board_path)
         ticked = self._ticked()
+        root = os.path.dirname(ticked[0]) if len(ticked) == 1 else sp.sessions_dir(self.board_path)
         path = sp.renders_dir(root, os.path.basename(ticked[0])) if len(ticked) == 1 else \
             os.path.join(root, sp.RENDERS)
         if not os.path.isdir(path):
@@ -342,7 +366,46 @@ class ControlWindow(wx.Frame):
 
     def _open_folder(self, _e):
         ticked = self._ticked()
-        self._open(ticked[0] if len(ticked) == 1 else sp.sessions_dir(self.board_path))
+        path = ticked[0] if len(ticked) == 1 else sp.sessions_dir(self.board_path)
+        os.makedirs(path, exist_ok=True)
+        self._open(path)
+
+    def _change_store_dir(self, _e):
+        dlg = wx.DirDialog(self, "Folder for recordings (each board gets its own subfolder)",
+                           defaultPath=sp.store_dir() if os.path.isdir(sp.store_dir()) else "")
+        if dlg.ShowModal() == wx.ID_OK:
+            path = dlg.GetPath()
+            sp.save_settings(STORE_DIR="" if os.path.normcase(path) == os.path.normcase(sp.default_store_dir())
+                             else path)
+            self._options_changed(None)
+            self._reload_sessions()
+        dlg.Destroy()
+
+    def _move_ticked(self, _e):
+        dest = sp.sessions_dir(self.board_path)
+        rec = self._rec()
+        todo = [d for d in self._ticked()
+                if os.path.normcase(os.path.dirname(d)) != os.path.normcase(dest)
+                and not (rec and d == rec.root)]
+        if rec and rec.root in self._ticked():
+            wx.MessageBox("The recording in progress can't be moved; stop it first.", "PCB Timelapse")
+        if not todo:
+            if self._ticked():
+                wx.MessageBox("The ticked recordings are already there.", "PCB Timelapse")
+            return
+        if wx.MessageBox(f"Move {len(todo)} recording(s) and their videos to\n\n{dest}?",
+                         "PCB Timelapse", wx.YES_NO | wx.ICON_QUESTION) != wx.YES:
+            return
+        failed = []
+        with wx.BusyCursor():
+            for d in todo:
+                try:
+                    sp.move_session(d, dest)
+                except Exception as e:  # noqa: BLE001
+                    failed.append(f"{sp.session_label(d)}: {e}")
+        if failed:
+            wx.MessageBox("Couldn't move:\n" + "\n".join(failed), "PCB Timelapse")
+        self._reload_sessions()
 
     @staticmethod
     def _open(path):

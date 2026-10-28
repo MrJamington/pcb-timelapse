@@ -74,7 +74,7 @@ Several parts need to know "is something recording right now?". That's stored in
 
 Created by `start_recording()`. In `__init__` it:
 
-- Works out the folder: `sessions_dir(board)` → `<board folder>/pcb_timelapse/<date-time>/`, with `view/` and `board/` subfolders. If *continuing* an earlier recording, it reuses that folder, carries on the clock from the last logged time, and continues the file numbering (`_next_index`).
+- Works out the folder: `sessions_dir(board)` → by default `Documents/PCB Timelapse/<board name> (<id>)/<date-time>/` (outside the project, because KiCad's backup on save scans the project folder), or `<board folder>/pcb_timelapse/<date-time>/` if *Store recordings* is set to the project, with `view/` and `board/` subfolders. If *continuing* an earlier recording, it reuses that folder, carries on the clock from the last logged time, and continues the file numbering (`_next_index`).
 - Opens `log.csv` (see §4.6) and writes `session.json` (board name, settings, start time).
 - Takes a first board snapshot from the board file on disk.
 - Starts a **`wx.Timer`** that calls `_on_tick` every `VIEW_INTERVAL_S` (1 s by default).
@@ -226,7 +226,7 @@ Finished frames are cached too. The cache key includes all the look settings plu
 ### 8.5 Where files go
 
 ```
-<board folder>/pcb_timelapse/
+Documents/PCB Timelapse/<board name> (<id>)/   (or <board folder>/pcb_timelapse/)
     20261024-153000/            a recording
         view/  board/  log.csv  session.json
         cache/                  render working files (safe to delete)
@@ -242,7 +242,7 @@ Finished frames are cached too. The cache key includes all the look settings plu
 | Decision | Why |
 |---|---|
 | Never touch the live board (safe mode) | A snapshot during a drag can crash KiCad; KiCad's autosave already waits for a safe moment |
-| Never write to your `.kicad_pcb` | Everything is written inside `pcb_timelapse/`, plus settings in KiCad's settings folder |
+| Never write to your `.kicad_pcb` | Everything is written to the recordings folder and `pcb_timelapse/` next to the board, plus settings in KiCad's settings folder |
 | No `.kicad_pcb` files in the cache | KiCad's backups zip every one, which slowed saves badly |
 | Rendering in a separate program | Needs packages KiCad doesn't have, and must not freeze KiCad |
 | Everything risky wrapped in `try/except` | A plugin error should print a message, never take KiCad down |
@@ -256,7 +256,7 @@ Finished frames are cached too. The cache key includes all the look settings plu
 
 | Question | Where to look |
 |---|---|
-| Does it modify my board? | No. Search the `.py` files for `open(`: everything written goes into `pcb_timelapse/` next to the board, apart from the two settings files in KiCad's settings folder |
+| Does it modify my board? | No. Search the `.py` files for `open(`: everything written goes into the recordings folder (outside the project by default) or `pcb_timelapse/` next to the board, apart from the two settings files in KiCad's settings folder |
 | Does it send anything over the internet? | No. There's no networking code anywhere. The only programs it launches are `kicad-cli`, `ffmpeg`, `ffprobe` and `render.py` itself, plus Explorer when you click *Open folder* |
 | What runs in the background inside KiCad? | Two `wx.Timer`s (the recorder's tick and the 2 s watcher) and short-lived file-copy threads |
 | Can it crash KiCad? | In safe mode it only takes screenshots, reads one drop-down and copies files KiCad already wrote. Live mode is the risky one (§4.5) |

@@ -53,18 +53,21 @@ Save the board once, then click the record button. The **PCB Timelapse** window 
   - capture the whole editor (UI shown or cropped when rendering) or the drawing area only
   - screenshot interval
   - where board snapshots come from (below)
+  - where recordings are stored (below)
 - **Recordings:** this board's recordings with length, frame count and size on disk. Recordings that have been rendered are marked.
   - Tick them by hand, or with *Tick ones under N frames / minutes*.
   - Then delete them, clear render caches, open the folders, or start a render.
 
-Files go next to your board:
+Recordings are stored **outside the project** by default:
 
 ```
-<board folder>/pcb_timelapse/
+Documents/PCB Timelapse/<board name> (<id>)/
     20261024-153000/      one recording (screenshots, board snapshots, log)
     renders/
         20261024-153000/  its videos; kept even if the recording is deleted
 ```
+
+KiCad's backup on save scans the whole project folder, so thousands of screenshots inside it slow every save down. You can pick another base folder with **Change...**, or switch *Store recordings* to *Next to the board* to keep them in `<board folder>/pcb_timelapse/` instead. Recordings already in the other place are still listed (marked *in project* or *elsewhere*); tick them and use **Move ticked here** to move them and their videos. Small per-board files, like the auto-record marker, always stay in `<board folder>/pcb_timelapse/`.
 
 Your `.kicad_pcb` is never modified.
 
@@ -82,7 +85,7 @@ In KiCad 10, autosave runs about 5 s after you stop editing. You can change that
 
 ### Ignoring recordings in git
 
-Recordings can get large. To ignore them but keep the rendered videos:
+Only relevant if recordings are stored next to the board. They can get large. To ignore them but keep the rendered videos:
 
 ```gitignore
 **/pcb_timelapse/**
@@ -147,6 +150,7 @@ python render.py REC --hide B.Silkscreen --holes cyan --vias kicad --view-ui ful
 
 - **The view video is black or shows the wrong area:** set Capture to the other mode in the PCB Timelapse window.
 - **The view video is black on Linux:** if your desktop uses Wayland, KiCad may not allow screenshots. Try running KiCad under X11 instead, e.g. launch it with `GDK_BACKEND=x11 kicad`, or pick an X11 session at login.
+- **Saving in KiCad is slow:** recordings stored inside the project slow KiCad's backup on save. Set *Store recordings* to *Outside the project* and move them with **Move ticked here**.
 - **The board video doesn't change:** check the Project Backup settings above, or save more often.
 - **The render dialog can't find Python:** run `pip install pymupdf pillow` in your normal Python, or paste the path to `python.exe` into the dialog.
 - **Clicking a button marks the board as modified (`*`):** this was a KiCad behaviour with old-style plugins. PCB Timelapse intercepts its own buttons to avoid it, but if KiCad changes its toolbar, the `*` may come back. It's harmless.

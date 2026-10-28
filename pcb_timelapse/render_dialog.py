@@ -460,9 +460,8 @@ class RenderDialog(wx.Dialog):
 
     # ------------------------------------------------------------- session
     def _sessions(self):
-        dirs = [d for d in glob.glob(os.path.join(self.sp_dir, "*"))
-                if os.path.exists(os.path.join(d, "log.csv"))]
-        return sorted(dirs, reverse=True)
+        from . import recorder as rec_mod
+        return rec_mod.list_sessions(self.board.GetFileName())  # wherever they're stored
 
     @staticmethod
     def _describe(d):
