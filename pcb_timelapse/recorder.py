@@ -393,13 +393,29 @@ def session_info(d, with_size=False):
     except OSError:
         pass
     if with_size:
-        for root, _dirs, files in os.walk(d):
-            for fn in files:
-                try:
-                    info["bytes"] += os.path.getsize(os.path.join(root, fn))
-                except OSError:
-                    pass
+        info["bytes"] = dir_size(d)
     return info
+
+
+def dir_size(d):
+    """Total bytes under a folder. scandir gets sizes from the directory listing
+    on Windows, so this avoids one file-system call per screenshot."""
+    total = 0
+    stack = [d]
+    while stack:
+        try:
+            with os.scandir(stack.pop()) as it:
+                for e in it:
+                    try:
+                        if e.is_dir(follow_symlinks=False):
+                            stack.append(e.path)
+                        else:
+                            total += e.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+    return total
 
 
 def session_label(d):

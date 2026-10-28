@@ -308,7 +308,7 @@ class RenderDialog(wx.Dialog):
         tbox = wx.StaticBoxSizer(wx.VERTICAL, bottom, "Tools")
         tg = wx.FlexGridSizer(0, 2, 6, 8)
         tg.AddGrowableCol(1)
-        py = c.get("python") or " ".join(_find_python() or [])
+        py = c.get("python") or ""  # if unset, searched for in the background below
         tg.Add(wx.StaticText(bottom, label="Python"), 0, wx.ALIGN_CENTER_VERTICAL)
         self.python = wx.TextCtrl(bottom, value=py)
         tg.Add(self.python, 1, wx.EXPAND)
@@ -359,12 +359,25 @@ class RenderDialog(wx.Dialog):
         self._initial_layout(parent, top, left, right, bottom, btns)
         self.CentreOnParent()
 
-        if not py:
-            example = ("python.exe, e.g. C:\\Python312\\python.exe" if sys.platform == "win32"
-                       else "your Python, e.g. python3 or /usr/bin/python3")
-            self._say("Couldn't find a Python with PyMuPDF + Pillow.\n"
-                      "Run:  pip install pymupdf pillow   then reopen this dialog,\n"
-                      f"or type the path to {example} above.")
+        if not py:  # starting Python to check it takes seconds; don't hold the dialog up
+            self._say("Looking for a Python with PyMuPDF + Pillow...")
+            threading.Thread(target=lambda: wx.CallAfter(self._python_found, _find_python()),
+                             daemon=True).start()
+
+    def _python_found(self, cmd):
+        if not self:
+            return  # dialog closed meanwhile
+        if self.python.GetValue().strip():
+            return  # typed one in meanwhile
+        if cmd:
+            self.python.SetValue(" ".join(cmd))
+            self._say("Found: " + " ".join(cmd))
+            return
+        example = ("python.exe, e.g. C:\\Python312\\python.exe" if sys.platform == "win32"
+                   else "your Python, e.g. python3 or /usr/bin/python3")
+        self._say("Couldn't find a Python with PyMuPDF + Pillow.\n"
+                  "Run:  pip install pymupdf pillow   then reopen this dialog,\n"
+                  f"or type the path to {example} above.")
 
     # -------------------------------------------------------------- layout
     def _initial_layout(self, parent, top, left, right, bottom, btns):

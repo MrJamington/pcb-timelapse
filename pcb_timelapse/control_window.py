@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
 
 import pcbnew
 import wx
@@ -232,26 +233,51 @@ class ControlWindow(wx.Frame):
 
     # ---------------------------------------------------------- recordings
     def _reload_sessions(self):
-        rec = self._rec()
-        current = rec.root if rec else None
+        """Fill the list straight away; disk sizes follow from a background thread."""
         self.paths = sp.list_sessions(self.board_path)
-        self.infos = [sp.session_info(d, with_size=True) for d in self.paths]
-        labels = []
-        for d, info in zip(self.paths, self.infos):
-            tag = "   ● recording" if d == current else ""
-            if os.path.isdir(sp.renders_dir(os.path.dirname(d), os.path.basename(d))):
-                tag += "   ▶ rendered"
-            labels.append(f"{sp.session_label(d)}    {info['seconds'] / 60:.1f} min · "
-                          f"{info['frames']} frame{'s' if info['frames'] != 1 else ''} · {_human(info['bytes'])}{tag}")
-        self.list.Set(labels)
+        self.infos = [sp.session_info(d) for d in self.paths]  # log only: fast
+        self.sizes = [None] * len(self.paths)
+        self.list.Set(self._labels())
         self.cont_choice.Set([sp.session_label(d) for d in self.paths])
         if self.paths:
             self.cont_choice.SetSelection(0)
         else:
             self.new_rb.SetValue(True)
-        total = sum(i["bytes"] for i in self.infos)
-        self.total.SetLabel(f"{len(self.paths)} recordings · {_human(total)} on disk")
+        self._show_total()
         self._refresh_status()
+        self._size_gen = getattr(self, "_size_gen", 0) + 1
+        threading.Thread(target=self._measure, args=(self._size_gen, list(self.paths)),
+                         daemon=True).start()
+
+    def _labels(self):
+        rec = self._rec()
+        current = rec.root if rec else None
+        labels = []
+        for d, info, size in zip(self.paths, self.infos, self.sizes):
+            tag = "   ● recording" if d == current else ""
+            if os.path.isdir(sp.renders_dir(os.path.dirname(d), os.path.basename(d))):
+                tag += "   ▶ rendered"
+            labels.append(f"{sp.session_label(d)}    {info['seconds'] / 60:.1f} min · "
+                          f"{info['frames']} frame{'s' if info['frames'] != 1 else ''} · "
+                          f"{_human(size) if size is not None else '…'}{tag}")
+        return labels
+
+    def _show_total(self):
+        known = [b for b in self.sizes if b is not None]
+        size = _human(sum(known)) if len(known) == len(self.sizes) else "…"
+        self.total.SetLabel(f"{len(self.paths)} recordings · {size} on disk")
+
+    def _measure(self, gen, paths):
+        for i, d in enumerate(paths):
+            b = sp.dir_size(d)
+            wx.CallAfter(self._set_size, gen, i, b)
+
+    def _set_size(self, gen, i, b):
+        if not self or gen != self._size_gen or i >= len(self.sizes):
+            return  # window closed, or the list was reloaded meanwhile
+        self.sizes[i] = b
+        self.list.SetString(i, self._labels()[i])  # keeps the tick
+        self._show_total()
 
     def _check_all(self, on):
         for i in range(self.list.GetCount()):
