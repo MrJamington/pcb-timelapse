@@ -86,6 +86,9 @@ class ControlWindow(wx.Frame):
         self.capture = add("Capture", wx.Choice(p, choices=[l for l, _ in CAPTURE_CHOICES]))
         self.capture.SetSelection(next((i for i, (_, v) in enumerate(CAPTURE_CHOICES)
                                         if v == sp.CAPTURE_MODE), 0))
+        self.blink = add("", wx.CheckBox(p, label="Blink the record button while capturing"))
+        self.blink.SetValue(sp.ICON_BLINK)
+        self.blink.Bind(wx.EVT_CHECKBOX, self._options_changed)
         self.interval = add("Screenshot every (s)",
                             wx.SpinCtrlDouble(p, min=0.25, max=30, inc=0.25,
                                               initial=float(sp.VIEW_INTERVAL_S)))
@@ -233,6 +236,7 @@ class ControlWindow(wx.Frame):
             VIEW_INTERVAL_S=float(self.interval.GetValue()),
             BOARD_SOURCE=SOURCE_CHOICES[self.source.GetSelection()][1],
             STORE_IN=STORE_CHOICES[self.store.GetSelection()][1],
+            ICON_BLINK=self.blink.GetValue(),
         )
         self.store_path.SetLabel(sp.sessions_dir(self.board_path))
         self.store_path.SetToolTip(sp.sessions_dir(self.board_path))

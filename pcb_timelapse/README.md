@@ -38,7 +38,7 @@ Three buttons appear on the toolbar:
 
 | Button | What it does |
 |---|---|
-| Board with red dot | Opens the PCB Timelapse window. The dot is bright red while recording, and blinks while capturing |
+| Board with red dot | Opens the PCB Timelapse window. The dot is bright red while recording, and blinks while capturing (blinking can be turned off in its options) |
 | Board with orange pause | Pauses and resumes recording |
 | Board with blue play | Opens the render dialog |
 

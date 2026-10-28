@@ -56,6 +56,7 @@ STORE_IN = "outside"       # "outside" - <STORE_DIR>/<board name> (<id>)/, outsi
                            #   so thousands of screenshots in it slow every save down)
                            # "project" - <board folder>/pcb_timelapse/, next to the board
 STORE_DIR = ""             # base folder for "outside"; empty = Documents/PCB Timelapse
+ICON_BLINK = True          # blink the record button while capturing (False = steady red)
 # --------------------------------------------------------------------------
 
 AUTOSTART_MARKER = ".autostart"   # lives in <board folder>/pcb_timelapse/, wherever recordings are stored
@@ -77,7 +78,7 @@ def settings_dir():
 
 
 SETTINGS_FILE = os.path.join(settings_dir(), "recorder_settings.json")
-SETTING_NAMES = ("AUTO_START", "CAPTURE_MODE", "VIEW_INTERVAL_S", "BOARD_SOURCE", "STORE_IN", "STORE_DIR")
+SETTING_NAMES = ("AUTO_START", "CAPTURE_MODE", "VIEW_INTERVAL_S", "BOARD_SOURCE", "STORE_IN", "STORE_DIR", "ICON_BLINK")
 
 
 def load_settings():
@@ -614,7 +615,7 @@ class Recorder:
             self.last_tick = None       # pause the active-time clock
             _icon().set("rec")          # solid = recording, but paused
             return
-        self.blink = not self.blink     # blinking = capturing right now
+        self.blink = not self.blink if ICON_BLINK else True  # blinking = capturing right now
         _icon().set("rec" if self.blink else "rec_dim")
 
         # A long gap means the timer didn't run (laptop asleep, KiCad frozen):
