@@ -184,6 +184,25 @@ def _is_foreground(frame):
     return frame.IsActive()
 
 
+def _forget_on_destroy(win, forget):
+    """
+    Call forget() the moment KiCad destroys `win` (or a child of it).
+
+    Toolbar widgets are created by KiCad's C++ code, so Python is NOT told when
+    they're freed: a cached reference then points at freed memory, and the next
+    call on it crashes KiCad instead of raising an exception we could catch.
+    KiCad rebuilds its toolbars when you change grids, track widths, via sizes
+    and the like, so caches must be dropped right then, before anything else runs.
+    """
+    def on_destroy(evt):
+        forget()
+        evt.Skip()
+    try:
+        win.Bind(wx.EVT_WINDOW_DESTROY, on_destroy)
+    except Exception:  # noqa: BLE001
+        forget()  # can't watch it, so don't keep it
+
+
 class ToolbarIcon:
     """
     Swaps the record button's icon: dull dot when idle, bright red when
@@ -199,6 +218,10 @@ class ToolbarIcon:
         self.found = None       # (toolbar, tool id)
         self.shown = None
         self.images = {}
+
+    def _forget(self):
+        self.found = None
+        self.shown = None
 
     def _find(self, frame):
         stack = list(frame.GetChildren())
@@ -232,6 +255,7 @@ class ToolbarIcon:
                     self.shown = None
                     if self.found is None:
                         return
+                    _forget_on_destroy(self.found[0], self._forget)
                 tb, tool_id = self.found
                 if state == self.shown and tb.FindTool(tool_id) is not None:
                     return
@@ -295,6 +319,9 @@ class ActiveLayerProbe:
         self.names = []
         self.retry_at = 0.0
 
+    def _forget(self):
+        self.widget = None
+
     def _looks_like_layer_box(self, w):
         try:
             n = w.GetCount()
@@ -325,6 +352,7 @@ class ActiveLayerProbe:
                 if self.widget is None:
                     self.retry_at = time.monotonic() + 10  # don't walk the UI every tick
                     return None
+                _forget_on_destroy(self.widget, self._forget)
             try:
                 idx = self.widget.GetSelection()
                 if idx < 0:
