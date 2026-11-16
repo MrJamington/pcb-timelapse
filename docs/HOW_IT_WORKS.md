@@ -207,7 +207,7 @@ For each screenshot (`normalise_view`): crop to the canvas (unless "whole editor
 
 KiCad can't "screenshot" a board that isn't open, so each snapshot is re-drawn from scratch:
 
-1. **Export layers with KiCad's own tool.** `Exporter` runs `kicad-cli pcb export svg` on each snapshot, producing one SVG (vector image) per layer: `snap-F_Cu.svg`, `snap-B_Cu.svg`, and so on. These are **cached**, which is why only the first render is slow. The board copy kept in the cache is named `snap.pcbtxt`, not `.kicad_pcb`, because KiCad's backup feature zips every `.kicad_pcb` in the project folder and hundreds of cached copies made saving slow.
+1. **Export layers with KiCad's own tool.** `Exporter` runs `kicad-cli pcb export svg` on each snapshot, producing one SVG (vector image) per layer: `snap-F_Cu.svg`, `snap-B_Cu.svg`, and so on. These are **cached** (gzipped, about 10× smaller), which is why only the first render is slow. The board itself isn't kept in the cache: it's unzipped from the recording only for the moment `kicad-cli` needs it, and a small `snap.json` keeps what rendering needs later (the layer list and via positions).
 2. **Decide the layer order for this moment.** `default_stack` gives the base order (bottom to top), or uses your order from the dialog. `arrange` then raises the copper layer you were last working on (from the log), together with its mask and silk, so the video "follows" you like the editor does. A non-copper active layer (e.g. silkscreen) is raised on its own, without reshuffling the copper.
 3. **Draw each layer into an image** (`_rasterise`, using PyMuPDF) and stack them (`render_board_frame`, using Pillow). Along the way:
    - `_expand_canvas` enlarges the drawing area, so boards placed outside the page aren't cut off
@@ -217,7 +217,7 @@ KiCad can't "screenshot" a board that isn't open, so each snapshot is re-drawn f
    - **holes:** KiCad plots plated holes white and non-plated holes black. `holes_only_svg` / `holes_mask` pick those shapes out, then they're painted in the chosen style (KiCad gold with a light wall, rings, etc.). Via holes are told apart from pad holes by matching positions against the vias listed in the snapshot (`board_vias`)
 4. **Timing.** By default each board frame is shown for as long as the matching stretch of the view video, so the two stay in sync. `encode_concat` gives ffmpeg a list of images with durations.
 
-Finished frames are cached too. The cache key includes all the look settings plus `RENDER_VERSION`, which is bumped whenever the drawing code changes, so old cached frames aren't reused by mistake.
+Finished frames are written to a folder named after all the look settings plus `RENDER_VERSION`, then deleted once the video is encoded (they're big, and only useful for an identical re-render; `--keep-frames` keeps them). After the render, `--cache-limit-gb` (set from the render dialog) deletes the least recently used caches of other recordings until the total fits.
 
 ### 8.4 The combined video
 
@@ -243,7 +243,7 @@ Documents/PCB Timelapse/<board name> (<id>)/   (or <board folder>/pcb_timelapse/
 |---|---|
 | Never touch the live board (safe mode) | A snapshot during a drag can crash KiCad; KiCad's autosave already waits for a safe moment |
 | Never write to your `.kicad_pcb` | Everything is written to the recordings folder and `pcb_timelapse/` next to the board, plus settings in KiCad's settings folder |
-| No `.kicad_pcb` files in the cache | KiCad's backups zip every one, which slowed saves badly |
+| No board copies or frame images kept in the cache | KiCad's backups zip every `.kicad_pcb` (slow saves), and frame images ran to gigabytes |
 | Rendering in a separate program | Needs packages KiCad doesn't have, and must not freeze KiCad |
 | Everything risky wrapped in `try/except` | A plugin error should print a message, never take KiCad down |
 | Log flushed every row; broken frames skipped | A crash or power cut loses at most the last second |

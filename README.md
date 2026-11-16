@@ -125,6 +125,8 @@ Drag the dividers between sections to resize them. Rendering runs in the backgro
 
 The first render exports every board layer and is the slow one. Re-renders with different layers or colours reuse that work.
 
+The cache only keeps those exported layers (compressed), not per-frame images. The render dialog's **Cache limit** (5 GB by default) clears older recordings' caches after each render, least recently used first; they're rebuilt if you render those again.
+
 ### Command line
 
 ```
@@ -156,6 +158,8 @@ python render.py REC --hide B.Silkscreen --holes cyan --vias kicad --view-ui ful
 | `--view-ui canvas\|full` | View video: drawing area only, or the whole editor UI |
 | `--only view\|board` | Render one stream only |
 | `--out DIR` | Output folder (default `renders/<recording>/`) |
+| `--cache-limit-gb N` | After rendering, delete other recordings' least recently used render caches until they total under N GB (the render dialog sets 5 by default) |
+| `--keep-frames` | Keep the per-frame images after encoding (large; only helps an identical re-render) |
 
 ## Troubleshooting
 

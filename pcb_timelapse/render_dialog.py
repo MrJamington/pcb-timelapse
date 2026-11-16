@@ -295,6 +295,11 @@ class RenderDialog(wx.Dialog):
         cv = c.get("combined", "auto")
         cv = {True: "auto", False: "off"}.get(cv, cv)  # older settings were a checkbox
         self.combined.SetSelection(next((i for i, (_, v) in enumerate(LAYOUTS) if v == cv), 1))
+        self.cache_gb = add("Cache limit (GB, 0 = none)",
+                            wx.SpinCtrl(o, min=0, max=1000, initial=c.get("cache_gb", 5)))
+        self.cache_gb.SetToolTip("After each render, older recordings' render caches are deleted "
+                                 "(least recently used first) until they fit. They're rebuilt if "
+                                 "you render those recordings again.")
         og = wx.BoxSizer(wx.VERTICAL)
         og.Add(g, 0, wx.ALL | wx.EXPAND, 6)
         o.SetSizer(og)
@@ -620,6 +625,7 @@ class RenderDialog(wx.Dialog):
             "hold": self.hold.GetValue(),
             "sync": self.sync.GetValue(),
             "combined": LAYOUTS[max(0, self.combined.GetSelection())][1],
+            "cache_gb": self.cache_gb.GetValue(),
             "python": self.python.GetValue().strip(),
             "cli": self.cli.GetValue().strip(),
             "separate": self.separate.GetValue(),
@@ -676,6 +682,8 @@ class RenderDialog(wx.Dialog):
             args += ["--combined", "--layout", c["combined"]]
         if c["cli"]:
             args += ["--kicad-cli", c["cli"]]
+        if c["cache_gb"]:
+            args += ["--cache-limit-gb", str(c["cache_gb"])]
         if c["separate"] and len(chosen) > 1:
             args.append("--separate")
 

@@ -30,6 +30,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import sys
 from collections import Counter
 
@@ -200,24 +201,70 @@ def file_suffix(name):
 
 
 # --------------------------------------------------------- board: SVG export
-SNAP_NAME = "snap.pcbtxt"
+SNAP_INFO = "snap.json"   # per snapshot: its layers and via positions (small)
+OLD_SNAP_COPIES = ("snap.pcbtxt", "snap.kicad_pcb")  # full board copies older versions kept
+
+
+def read_svg(path):
+    """Cached layer SVGs are stored gzipped (they shrink ~10x)."""
+    if path.endswith(".gz"):
+        with gzip.open(path, "rt", encoding="utf-8") as f:
+            return f.read()
+    with open(path, encoding="utf-8") as f:
+        return f.read()
+
+
+def gzip_svgs(d):
+    """Compress any plain .svg files in a snapshot cache folder."""
+    for name in os.listdir(d):
+        if name.endswith(".svg"):
+            src = os.path.join(d, name)
+            with open(src, "rb") as fi, gzip.open(src + ".gz.part", "wb", compresslevel=6) as fo:
+                shutil.copyfileobj(fi, fo)
+            os.replace(src + ".gz.part", src + ".gz")
+            os.remove(src)
 
 
 def clean_old_caches(session):
-    """Rename leftover cache .kicad_pcb copies from older versions (see snapshot_dir)."""
+    """
+    Slim caches from older versions: drop the full board copy kept per snapshot
+    (the gzipped original is in the recording), compress plain SVGs, and remove
+    leftover frame folders. Returns the number of snapshot folders tidied.
+    """
     n = 0
     for root, _dirs, files in os.walk(os.path.join(session, "cache")):
-        if "snap.kicad_pcb" in files:
-            old, new = os.path.join(root, "snap.kicad_pcb"), os.path.join(root, SNAP_NAME)
+        old = [x for x in OLD_SNAP_COPIES if x in files]
+        if old or any(x.endswith(".svg") for x in files):
             try:
-                if os.path.exists(new):
-                    os.remove(old)
-                else:
-                    os.replace(old, new)
+                if old and SNAP_INFO not in files:
+                    with open(os.path.join(root, old[0]), encoding="utf-8") as fi:
+                        write_snap_info(root, fi.read())
+                for x in old:
+                    os.remove(os.path.join(root, x))
+                gzip_svgs(root)
                 n += 1
             except OSError:
                 pass
     return n
+
+
+def write_snap_info(d, pcb_text):
+    info = {"layers": board_layers(pcb_text),
+            "vias": [(float(x), float(y)) for x, y in VIA_RE.findall(pcb_text)]}
+    with open(os.path.join(d, SNAP_INFO + ".part"), "w") as f:
+        json.dump(info, f)
+    os.replace(os.path.join(d, SNAP_INFO + ".part"), os.path.join(d, SNAP_INFO))
+    return info
+
+
+def read_snap_info(d):
+    try:
+        with open(os.path.join(d, SNAP_INFO)) as f:
+            info = json.load(f)
+        info["layers"] = {k: tuple(v) for k, v in info["layers"].items()}
+        return info
+    except (OSError, ValueError, KeyError):
+        return None
 class Exporter:
     def __init__(self, cli, cache_name, theme, drill_opt):
         self.cli, self.cache_name, self.theme, self.drill_opt = cli, cache_name, theme, drill_opt
@@ -231,41 +278,35 @@ class Exporter:
         return a
 
     def snapshot_dir(self, snap_gz):
+        """Cache folder for one snapshot, plus its info (layers, vias)."""
         name = os.path.basename(snap_gz).split(".")[0]
         session_root = os.path.dirname(os.path.dirname(os.path.abspath(snap_gz)))
         d = os.path.join(session_root, "cache", self.cache_name, name)
         os.makedirs(d, exist_ok=True)
-        # Kept as .pcbtxt, not .kicad_pcb: KiCad's backup-on-save zips every
-        # .kicad_pcb under the project folder, and hundreds of cached copies made
-        # every save hitch. A .kicad_pcb copy only exists briefly during export.
-        pcb = os.path.join(d, SNAP_NAME)
-        old = os.path.join(d, "snap.kicad_pcb")       # caches from older versions
-        if os.path.exists(old):
-            if os.path.exists(pcb):
-                os.remove(old)
-            else:
-                os.replace(old, pcb)
-        if not os.path.exists(pcb):
-            with gzip.open(snap_gz, "rb") as g, open(pcb + ".part", "wb") as f:
-                f.write(g.read())
-            os.replace(pcb + ".part", pcb)
-        return d, pcb
+        info = read_snap_info(d)
+        if info is None:
+            with gzip.open(snap_gz, "rt", encoding="utf-8") as g:
+                info = write_snap_info(d, g.read())
+        return d, info
 
     def svg_path(self, d, disp):
-        return os.path.join(d, f"snap-{file_suffix(disp)}.svg")
+        return os.path.join(d, f"snap-{file_suffix(disp)}.svg.gz")
 
     def export(self, snap_gz, wanted):
         """Make sure an SVG exists for every wanted layer. Returns (dir, layer map)."""
-        d, pcb = self.snapshot_dir(snap_gz)
-        with open(pcb, encoding="utf-8") as f:
-            layers = board_layers(f.read())
+        d, info = self.snapshot_dir(snap_gz)
+        layers = info["layers"]
         todo = [l for l in wanted if l in layers
                 and not os.path.exists(self.svg_path(d, layers[l][0]))]
         if not todo:
             return d, layers
 
+        # The board copy only exists during the export: the gzipped original is
+        # in the recording. (A .kicad_pcb kept here would also slow KiCad's
+        # backup-on-save down if recordings are inside the project.)
         tmp_pcb = os.path.join(d, "snap.kicad_pcb")  # kicad-cli wants the real extension
-        shutil.copyfile(pcb, tmp_pcb)
+        with gzip.open(snap_gz, "rb") as g, open(tmp_pcb, "wb") as f:
+            shutil.copyfileobj(g, f)
         try:
             if self.multi:
                 r = subprocess.run(self.base_args() + ["--mode-multi", "--layers", ",".join(todo),
@@ -277,7 +318,7 @@ class Exporter:
                     print(f"  kicad-cli failed on {os.path.basename(snap_gz)}:\n{r.stderr}")
             if not self.multi:
                 for l in todo:
-                    out = self.svg_path(d, layers[l][0])
+                    out = self.svg_path(d, layers[l][0])[:-3]  # plain .svg; gzipped below
                     subprocess.run(self.base_args() + ["--layers", l, "-o", out, tmp_pcb],
                                    capture_output=True, text=True)
         finally:
@@ -285,6 +326,7 @@ class Exporter:
                 os.remove(tmp_pcb)
             except OSError:
                 pass
+        gzip_svgs(d)
         return d, layers
 
 
@@ -348,10 +390,9 @@ def _recolour_vias(svg_text, vias):
 
 
 def load_svg(path, bg_hex, via_layer_colour=False):
-    with open(path, encoding="utf-8") as f:
-        svg = _expand_canvas(f.read())
+    svg = _expand_canvas(read_svg(path))
     if via_layer_colour:
-        vias = board_vias(os.path.join(os.path.dirname(path), SNAP_NAME))
+        vias = board_vias(os.path.dirname(path))
         if vias:
             svg = _recolour_vias(svg, vias)
     # KiCad plots drill holes in pure white (plated) or black (non-plated) to knock
@@ -370,15 +411,12 @@ VIA_RE = re.compile(r"\(via\b[^(]*\(at\s+([-\d.]+)\s+([-\d.]+)")
 _via_cache = {}
 
 
-def board_vias(pcb_path):
-    """Via centres (mm) from a snapshot .kicad_pcb, to tell via holes from pad holes."""
-    if pcb_path not in _via_cache:
-        try:
-            with open(pcb_path, encoding="utf-8") as f:
-                _via_cache[pcb_path] = [(float(x), float(y)) for x, y in VIA_RE.findall(f.read())]
-        except OSError:
-            _via_cache[pcb_path] = []
-    return _via_cache[pcb_path]
+def board_vias(snap_dir):
+    """Via centres (mm) of a snapshot, to tell via holes from pad holes."""
+    if snap_dir not in _via_cache:
+        info = read_snap_info(snap_dir)
+        _via_cache[snap_dir] = [tuple(v) for v in info["vias"]] if info else []
+    return _via_cache[snap_dir]
 
 
 def _is_via(shape, vias):
@@ -426,8 +464,7 @@ def holes_only_svg(svg_text, kind="all", vias=(), plating="any"):
 
 def holes_mask(path, zoom, clip, W, H, ox, oy, kind="all", vias=(), plating="any"):
     """'L' mask of just the drill holes in a copper-layer SVG."""
-    with open(path, encoding="utf-8") as f:
-        text = holes_only_svg(_expand_canvas(f.read()), kind, vias, plating)
+    text = holes_only_svg(_expand_canvas(read_svg(path)), kind, vias, plating)
     if text is None:
         return None
     doc = fitz.open(stream=text.encode(), filetype="svg")
@@ -478,8 +515,7 @@ def board_fill_mask(edge_svg, bg_hex, zoom, clip, W, H, ox, oy, cache_dir):
     closed. Flood-fills the outside at quarter resolution; cached per outline
     because the outline rarely changes.
     """
-    with open(edge_svg, "rb") as f:
-        key = hashlib.md5(f.read() + repr((zoom, tuple(clip), W, H)).encode()).hexdigest()[:16]
+    key = hashlib.md5(read_svg(edge_svg).encode() + repr((zoom, tuple(clip), W, H)).encode()).hexdigest()[:16]
     path = os.path.join(cache_dir, f"fill_{key}.png")
     if os.path.exists(path):
         try:
@@ -566,7 +602,7 @@ def render_board_frame(job):
     hole_src = next((svg for svg, cu in zip(svgs, copper) if cu and svg and os.path.exists(svg)), None)
     hs, vs = style.get("holes", "dark"), style.get("vias", "dark")
     if hole_src and (hs != "dark" or vs != "dark"):
-        vias = board_vias(os.path.join(os.path.dirname(hole_src), SNAP_NAME))
+        vias = board_vias(os.path.dirname(hole_src))
         jobs = [("all", hs)] if hs == vs else [("pad", hs), ("via", vs)]
         k = 2 * max(1, round(min(W, H) / 1080)) + 1  # ring/wall width: ~1 px at 1080p
         for kind, hstyle in jobs:
@@ -709,6 +745,12 @@ def main():
     ap.add_argument("--layout", choices=["auto", "side", "below"], default="auto",
                     help="combined video: side by side, board below, or auto (closest to 16:9)")
     ap.add_argument("--jobs", type=int, default=os.cpu_count() or 4)
+    ap.add_argument("--keep-frames", action="store_true",
+                    help="keep the per-frame images after encoding (big; only speeds up "
+                         "re-encoding with identical settings)")
+    ap.add_argument("--cache-limit-gb", type=float, default=0,
+                    help="after rendering, delete the least recently used render caches in "
+                         "the same folder until they total under this (0 = no limit)")
     ap.add_argument("--kicad-cli")
     a = ap.parse_args()
 
@@ -755,7 +797,10 @@ def render(sessions, a):
     for s in sessions:
         n = clean_old_caches(s)
         if n:
-            print(f"  tidied {n} old cache files in {os.path.basename(s)}")
+            print(f"  slimmed {n} cached snapshots in {os.path.basename(s)}")
+        touch_cache(s)
+    touch_cache(work)
+    drop_frame_dirs(cache)  # leftovers from older versions or cancelled renders
     views, boards = read_sessions(sessions)
     views = drop_broken_views(views)
     print(f"{len(views)} view frames, {len(boards)} board snapshots")
@@ -785,6 +830,8 @@ def render(sessions, a):
         with cf.ProcessPoolExecutor(a.jobs) as ex:
             list(ex.map(normalise_view, jobs, chunksize=16))
         encode_sequence(os.path.join(vdir, "%06d.png"), a.fps, view_mp4, a.hold, a.crf)
+        if not a.keep_frames:
+            shutil.rmtree(vdir, ignore_errors=True)
         print("  ->", view_mp4)
 
     # ---------------------------------------------------------- board stream
@@ -928,6 +975,8 @@ def render(sessions, a):
                 durs.append([p, step])
         frames_durs = [tuple(x) for x in durs]
         encode_concat(frames_durs, board_mp4, a.fps, a.hold, a.crf, cache)
+        if not a.keep_frames:
+            shutil.rmtree(fdir, ignore_errors=True)
         print("  ->", board_mp4)
 
     # -------------------------------------------------------------- combined
@@ -952,6 +1001,80 @@ def render(sessions, a):
                         "-c:v", "libx264", "-crf", str(a.crf), "-pix_fmt", "yuv420p", comb],
                        check=True)
         print(f"  -> {comb} ({'side by side' if layout == 'side' else 'board below'})")
+
+    if a.cache_limit_gb > 0:
+        roots = {os.path.dirname(s) for s in sessions}
+        keep = {os.path.normcase(os.path.join(p, "cache")) for p in sessions + [work]}
+        freed = enforce_cache_limit(roots, a.cache_limit_gb * 1e9, keep)
+        if freed:
+            print(f"cache limit: freed {freed / 1e6:,.0f} MB from older recordings' caches")
+
+
+# ------------------------------------------------------------------- cache size
+LAST_USED = ".last_used"
+
+
+def touch_cache(folder):
+    c = os.path.join(folder, "cache")
+    os.makedirs(c, exist_ok=True)
+    with open(os.path.join(c, LAST_USED), "w") as f:
+        f.write(str(time.time()))
+
+
+def drop_frame_dirs(cache):
+    """Per-frame image folders are only needed while encoding."""
+    if not os.path.isdir(cache):
+        return
+    for name in os.listdir(cache):
+        if name.startswith(("view_", "board_frames_")):
+            shutil.rmtree(os.path.join(cache, name), ignore_errors=True)
+
+
+def dir_size(d):
+    total, stack = 0, [d]
+    while stack:
+        try:
+            with os.scandir(stack.pop()) as it:
+                for e in it:
+                    try:
+                        if e.is_dir(follow_symlinks=False):
+                            stack.append(e.path)
+                        else:
+                            total += e.stat(follow_symlinks=False).st_size
+                    except OSError:
+                        pass
+        except OSError:
+            pass
+    return total
+
+
+def enforce_cache_limit(roots, limit, keep):
+    """Delete whole caches, least recently used first, until under `limit` bytes."""
+    caches = []
+    for root in roots:
+        try:
+            names = os.listdir(root)
+        except OSError:
+            continue
+        for n in names:
+            c = os.path.join(root, n, "cache")
+            if os.path.isdir(c):
+                try:
+                    used = os.path.getmtime(os.path.join(c, LAST_USED))
+                except OSError:
+                    used = os.path.getmtime(c)
+                caches.append((used, c, dir_size(c)))
+    total = sum(sz for _, _, sz in caches)
+    freed = 0
+    for used, c, sz in sorted(caches):
+        if total <= limit:
+            break
+        if os.path.normcase(c) in keep:
+            continue  # what was just rendered stays
+        shutil.rmtree(c, ignore_errors=True)
+        total -= sz
+        freed += sz
+    return freed
 
 
 if __name__ == "__main__":
